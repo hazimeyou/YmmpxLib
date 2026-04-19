@@ -21,7 +21,8 @@ public static class YmmpxPackageService
         if (!File.Exists(projectFilePath))
             throw new FileNotFoundException("Project file was not found.", projectFilePath);
 
-        var projectDirectory = Path.GetDirectoryName(Path.GetFullPath(projectFilePath))
+        var normalizedProjectPath = Path.GetFullPath(projectFilePath);
+        var projectDirectory = Path.GetDirectoryName(normalizedProjectPath)
             ?? throw new DirectoryNotFoundException($"Project directory was not found: {projectFilePath}");
 
         var excluded = excludedFiles is null
@@ -54,7 +55,10 @@ public static class YmmpxPackageService
             .FindFilePaths(document.RootElement)
             .Select(path => NormalizePath(projectDirectory, path))
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Where(path => File.Exists(path) && !excluded.Contains(path))
+            .Where(path =>
+                File.Exists(path) &&
+                !excluded.Contains(path) &&
+                !string.Equals(path, normalizedProjectPath, GetPathComparison()))
             .ToList();
 
         progress?.Report(new YmmpxPackagingProgress(0, resources.Count, "Collecting resources"));
@@ -245,6 +249,50 @@ public static class YmmpxPackageService
             }
         }
 
+        var manifestPath = Path.Combine(baseDirectory, "manifest.json");
+        if (File.Exists(manifestPath))
+        {
+            try
+            {
+                using var manifestDoc = JsonDocument.Parse(File.ReadAllText(manifestPath));
+                if (manifestDoc.RootElement.ValueKind == JsonValueKind.Object &&
+                    manifestDoc.RootElement.TryGetProperty("Files", out var filesElement) &&
+                    filesElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var fileEntry in filesElement.EnumerateArray())
+                    {
+                        if (fileEntry.ValueKind != JsonValueKind.Object)
+                            continue;
+
+                        if (!fileEntry.TryGetProperty("OriginalPath", out var originalPathElement) ||
+                            originalPathElement.ValueKind != JsonValueKind.String)
+                            continue;
+
+                        if (!fileEntry.TryGetProperty("BundlePath", out var bundlePathElement) ||
+                            bundlePathElement.ValueKind != JsonValueKind.String)
+                            continue;
+
+                        var originalPath = originalPathElement.GetString();
+                        var bundlePath = bundlePathElement.GetString();
+                        if (string.IsNullOrWhiteSpace(originalPath) || string.IsNullOrWhiteSpace(bundlePath))
+                            continue;
+
+                        if (!TryResolvePathWithinBaseDirectory(baseDirectory, bundlePath, out var resolvedPath))
+                            continue;
+
+                        linkMap[Path.GetFullPath(originalPath)] = resolvedPath;
+                    }
+
+                    if (linkMap.Count > 0)
+                        return linkMap;
+                }
+            }
+            catch (JsonException)
+            {
+                // Fallback to links.txt when manifest.json is malformed.
+            }
+        }
+
         var linksPath = Path.Combine(baseDirectory, "links.txt");
         if (File.Exists(linksPath))
         {
@@ -368,6 +416,10 @@ public static class YmmpxPackageService
 
     private static string NormalizePath(string baseDirectory, string path)
     {
+        path = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
+        if (Uri.TryCreate(path, UriKind.Absolute, out var uri) && uri.IsFile)
+            return Path.GetFullPath(uri.LocalPath);
+
         if (Path.IsPathRooted(path))
             return Path.GetFullPath(path);
 

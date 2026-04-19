@@ -21,7 +21,8 @@ public static class YmmpxProjectJson
         {
             foreach (var property in element.EnumerateObject())
             {
-                if (property.Name == "FilePath" && property.Value.ValueKind == JsonValueKind.String)
+                if (property.Name.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
+                    property.Value.ValueKind == JsonValueKind.String)
                 {
                     var path = property.Value.GetString();
                     if (!string.IsNullOrWhiteSpace(path))
@@ -73,7 +74,7 @@ public static class YmmpxProjectJson
         {
             foreach (var item in obj.ToList())
             {
-                if (item.Key == "FilePath" && item.Value is JsonValue value)
+                if (item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) && item.Value is JsonValue value)
                 {
                     var path = value.GetValue<string>();
                     if (!string.IsNullOrWhiteSpace(path))
@@ -141,6 +142,10 @@ public static class YmmpxProjectJson
     {
         try
         {
+            if (Uri.TryCreate(path, UriKind.Absolute, out var uri) && uri.IsFile)
+                return Path.GetFullPath(uri.LocalPath);
+
+            path = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
             return Path.GetFullPath(path);
         }
         catch (Exception)
