@@ -1,0 +1,46 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  PROJECT_PATH: YMMPXLib/YmmpxLib.csproj
+  PUBLISH_DIR: publish
+
+jobs:
+  build_and_release:
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Set Version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          echo "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Build
+        run: dotnet build ${{ env.PROJECT_PATH }} -c Release -p:VersionPrefix=$VERSION
+
+      - name: Publish
+        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -p:VersionPrefix=$VERSION -o ${{ env.PUBLISH_DIR }}
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref_name }}
+          artifacts: publish/YmmpxLib.dll
+          draft: true
+          prerelease: true
