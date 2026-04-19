@@ -21,9 +21,15 @@ public static class YmmpxPackageService
         if (!File.Exists(projectFilePath))
             throw new FileNotFoundException("Project file was not found.", projectFilePath);
 
+        var projectDirectory = Path.GetDirectoryName(Path.GetFullPath(projectFilePath))
+            ?? throw new DirectoryNotFoundException($"Project directory was not found: {projectFilePath}");
+
         var excluded = excludedFiles is null
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>(excludedFiles, StringComparer.OrdinalIgnoreCase);
+            : excludedFiles
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => NormalizePath(projectDirectory, path))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var projectText = await File.ReadAllTextAsync(projectFilePath, cancellationToken).ConfigureAwait(false);
         options ??= new YmmpxPackagingOptions();
@@ -46,6 +52,7 @@ public static class YmmpxPackageService
         using var document = JsonDocument.Parse(projectText);
         var resources = YmmpxProjectJson
             .FindFilePaths(document.RootElement)
+            .Select(path => NormalizePath(projectDirectory, path))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Where(path => File.Exists(path) && !excluded.Contains(path))
             .ToList();
@@ -357,5 +364,13 @@ public static class YmmpxPackageService
     private static StringComparison GetPathComparison()
     {
         return OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    }
+
+    private static string NormalizePath(string baseDirectory, string path)
+    {
+        if (Path.IsPathRooted(path))
+            return Path.GetFullPath(path);
+
+        return Path.GetFullPath(Path.Combine(baseDirectory, path));
     }
 }
