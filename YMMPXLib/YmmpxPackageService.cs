@@ -141,7 +141,7 @@ public static class YmmpxPackageService
         if (!File.Exists(ymmpxPath))
             throw new FileNotFoundException("Ymmpx file was not found.", ymmpxPath);
 
-        ZipFile.ExtractToDirectory(ymmpxPath, extractDirectory);
+        ExtractArchiveSafely(ymmpxPath, extractDirectory);
 
         var linkMap = LoadLinkMap(extractDirectory);
         var markerPath = Path.Combine(extractDirectory, "_ymmpx_project_path.txt");
@@ -196,29 +196,49 @@ public static class YmmpxPackageService
     public static Dictionary<string, string> LoadLinkMap(string baseDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseDirectory);
+        var linkMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         var linksJsonPath = Path.Combine(baseDirectory, "links.json");
         if (File.Exists(linksJsonPath))
         {
-            var jsonMap = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(linksJsonPath));
-            if (jsonMap is not null)
+            try
             {
-                return jsonMap.ToDictionary(
-                    x => x.Key,
-                    x => ResolvePath(baseDirectory, x.Value),
-                    StringComparer.OrdinalIgnoreCase);
+                var jsonMap = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(linksJsonPath));
+                if (jsonMap is not null)
+                {
+                    foreach (var item in jsonMap)
+                    {
+                        if (string.IsNullOrWhiteSpace(item.Key) || string.IsNullOrWhiteSpace(item.Value))
+                            continue;
+                        if (!TryResolvePathWithinBaseDirectory(baseDirectory, item.Value, out var resolvedPath))
+                            continue;
+                        linkMap[item.Key] = resolvedPath;
+                    }
+                    return linkMap;
+                }
+            }
+            catch (JsonException)
+            {
+                // Fallback to links.txt when links.json is malformed.
             }
         }
 
         var linksPath = Path.Combine(baseDirectory, "links.txt");
-        var linkMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (File.Exists(linksPath))
         {
             foreach (var line in File.ReadAllLines(linksPath))
             {
                 var parts = line.Split(',', 2);
                 if (parts.Length == 2)
-                    linkMap[parts[0].Trim()] = ResolvePath(baseDirectory, parts[1].Trim());
+                {
+                    var source = parts[0].Trim();
+                    var packagedPath = parts[1].Trim();
+                    if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(packagedPath))
+                        continue;
+                    if (!TryResolvePathWithinBaseDirectory(baseDirectory, packagedPath, out var resolvedPath))
+                        continue;
+                    linkMap[source] = resolvedPath;
+                }
             }
         }
 
@@ -265,8 +285,62 @@ public static class YmmpxPackageService
     private static string ResolvePath(string baseDirectory, string relativeOrAbsolutePath)
     {
         if (Path.IsPathRooted(relativeOrAbsolutePath))
-            return relativeOrAbsolutePath;
+            return Path.GetFullPath(relativeOrAbsolutePath);
 
-        return Path.Combine(baseDirectory, relativeOrAbsolutePath);
+        return Path.GetFullPath(Path.Combine(baseDirectory, relativeOrAbsolutePath));
+    }
+
+    private static void ExtractArchiveSafely(string ymmpxPath, string extractDirectory)
+    {
+        Directory.CreateDirectory(extractDirectory);
+
+        var baseDirectory = EnsureTrailingDirectorySeparator(Path.GetFullPath(extractDirectory));
+
+        using var archive = ZipFile.OpenRead(ymmpxPath);
+        foreach (var entry in archive.Entries)
+        {
+            var destinationPath = Path.GetFullPath(Path.Combine(extractDirectory, entry.FullName));
+            if (!destinationPath.StartsWith(baseDirectory, GetPathComparison()))
+                throw new InvalidDataException($"Entry path escapes extraction directory: {entry.FullName}");
+
+            if (string.IsNullOrEmpty(entry.Name))
+            {
+                Directory.CreateDirectory(destinationPath);
+                continue;
+            }
+
+            var destinationDirectory = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrWhiteSpace(destinationDirectory))
+                Directory.CreateDirectory(destinationDirectory);
+
+            entry.ExtractToFile(destinationPath, overwrite: false);
+        }
+    }
+
+    private static bool TryResolvePathWithinBaseDirectory(string baseDirectory, string relativePath, out string resolvedPath)
+    {
+        resolvedPath = string.Empty;
+        if (Path.IsPathRooted(relativePath))
+            return false;
+
+        var candidate = ResolvePath(baseDirectory, relativePath);
+        var normalizedBaseDirectory = EnsureTrailingDirectorySeparator(Path.GetFullPath(baseDirectory));
+        if (!candidate.StartsWith(normalizedBaseDirectory, GetPathComparison()))
+            return false;
+
+        resolvedPath = candidate;
+        return true;
+    }
+
+    private static string EnsureTrailingDirectorySeparator(string path)
+    {
+        if (path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar))
+            return path;
+        return path + Path.DirectorySeparatorChar;
+    }
+
+    private static StringComparison GetPathComparison()
+    {
+        return OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
     }
 }
