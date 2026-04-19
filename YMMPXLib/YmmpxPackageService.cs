@@ -190,6 +190,21 @@ public static class YmmpxPackageService
 
         File.WriteAllText(projectPath, root.ToJsonString(writeOptions));
 
+        var ymmpxBaseName = Path.GetFileNameWithoutExtension(ymmpxPath);
+        if (!string.IsNullOrWhiteSpace(ymmpxBaseName))
+        {
+            var desiredProjectPath = Path.Combine(extractDirectory, $"{ymmpxBaseName}.ymmp");
+            if (!string.Equals(projectPath, desiredProjectPath, StringComparison.OrdinalIgnoreCase))
+            {
+                var finalProjectPath = GetAvailableFilePath(desiredProjectPath);
+                if (File.Exists(finalProjectPath))
+                    File.Delete(finalProjectPath);
+
+                File.Move(projectPath, finalProjectPath);
+                projectPath = finalProjectPath;
+            }
+        }
+
         return new YmmpxUnpackResult(extractDirectory, projectPath, replacedCount, linkMap);
     }
 
