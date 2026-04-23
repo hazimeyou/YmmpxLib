@@ -21,9 +21,18 @@ public static class YmmpxPackageService
         if (!File.Exists(projectFilePath))
             throw new FileNotFoundException("Project file was not found.", projectFilePath);
 
-        var excluded = excludedFiles is null
-            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>(excludedFiles, StringComparer.OrdinalIgnoreCase);
+        var projectBaseDirectory = Path.GetDirectoryName(Path.GetFullPath(projectFilePath)) ?? Directory.GetCurrentDirectory();
+        var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (excludedFiles is not null)
+        {
+            foreach (var path in excludedFiles)
+            {
+                if (string.IsNullOrWhiteSpace(path))
+                    continue;
+
+                excluded.Add(NormalizePath(projectBaseDirectory, path));
+            }
+        }
 
         var projectText = await File.ReadAllTextAsync(projectFilePath, cancellationToken).ConfigureAwait(false);
         options ??= new YmmpxPackagingOptions();
@@ -44,13 +53,18 @@ public static class YmmpxPackageService
         }
 
         using var document = JsonDocument.Parse(projectText);
-        var resources = YmmpxProjectJson
+        var resourceEntries = YmmpxProjectJson
             .FindFilePaths(document.RootElement)
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Where(path => File.Exists(path) && !excluded.Contains(path))
+            .Select(originalPath => new
+            {
+                OriginalPath = originalPath,
+                ResolvedPath = NormalizePath(projectBaseDirectory, originalPath)
+            })
+            .Where(x => File.Exists(x.ResolvedPath) && !excluded.Contains(x.ResolvedPath))
             .ToList();
 
-        progress?.Report(new YmmpxPackagingProgress(0, resources.Count, "Collecting resources"));
+        progress?.Report(new YmmpxPackagingProgress(0, resourceEntries.Count, "Collecting resources"));
 
         var tempDir = Path.Combine(Path.GetTempPath(), "YmmpxLib", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
@@ -62,31 +76,36 @@ public static class YmmpxPackageService
 
             var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var fileMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var filesToPackage = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             await using (var writer = new StreamWriter(linksFile, false))
             {
-                for (var i = 0; i < resources.Count; i++)
+                for (var i = 0; i < resourceEntries.Count; i++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var sourcePath = resources[i];
-                    var originalName = Path.GetFileName(sourcePath);
-                    var uniqueName = originalName;
-                    var suffix = 1;
-
-                    while (usedNames.Contains(uniqueName))
+                    var entry = resourceEntries[i];
+                    if (!filesToPackage.TryGetValue(entry.ResolvedPath, out var zipPath))
                     {
-                        uniqueName =
-                            $"{Path.GetFileNameWithoutExtension(originalName)}_{suffix++}{Path.GetExtension(originalName)}";
+                        var originalName = Path.GetFileName(entry.ResolvedPath);
+                        var uniqueName = originalName;
+                        var suffix = 1;
+
+                        while (usedNames.Contains(uniqueName))
+                        {
+                            uniqueName =
+                                $"{Path.GetFileNameWithoutExtension(originalName)}_{suffix++}{Path.GetExtension(originalName)}";
+                        }
+
+                        usedNames.Add(uniqueName);
+                        zipPath = $"resources/{uniqueName}";
+                        filesToPackage[entry.ResolvedPath] = zipPath;
                     }
 
-                    usedNames.Add(uniqueName);
+                    fileMap[entry.OriginalPath] = zipPath;
 
-                    var zipPath = $"resources/{uniqueName}";
-                    fileMap[sourcePath] = zipPath;
-
-                    await writer.WriteLineAsync($"{sourcePath},{zipPath}").ConfigureAwait(false);
-                    progress?.Report(new YmmpxPackagingProgress(i + 1, resources.Count, "Building package"));
+                    await writer.WriteLineAsync($"{entry.OriginalPath},{zipPath}").ConfigureAwait(false);
+                    progress?.Report(new YmmpxPackagingProgress(i + 1, resourceEntries.Count, "Building package"));
                 }
             }
 
@@ -120,11 +139,11 @@ public static class YmmpxPackageService
                 zip.CreateEntryFromFile(linksFile, "links.txt");
                 zip.CreateEntryFromFile(linksJsonFile, "links.json");
 
-                foreach (var (source, destination) in fileMap)
+                foreach (var (source, destination) in filesToPackage)
                     zip.CreateEntryFromFile(source, destination);
             }
 
-            return new YmmpxPackagingResult(outputPath, resources.Count, fileMap);
+            return new YmmpxPackagingResult(outputPath, filesToPackage.Count, fileMap);
         }
         finally
         {
@@ -268,5 +287,13 @@ public static class YmmpxPackageService
             return relativeOrAbsolutePath;
 
         return Path.Combine(baseDirectory, relativeOrAbsolutePath);
+    }
+
+    private static string NormalizePath(string baseDirectory, string relativeOrAbsolutePath)
+    {
+        if (Path.IsPathRooted(relativeOrAbsolutePath))
+            return Path.GetFullPath(relativeOrAbsolutePath);
+
+        return Path.GetFullPath(Path.Combine(baseDirectory, relativeOrAbsolutePath));
     }
 }
