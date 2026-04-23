@@ -21,7 +21,8 @@ public static class YmmpxProjectJson
         {
             foreach (var property in element.EnumerateObject())
             {
-                if (property.Name == "FilePath" && property.Value.ValueKind == JsonValueKind.String)
+                if (property.Name.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
+                    property.Value.ValueKind == JsonValueKind.String)
                 {
                     var path = property.Value.GetString();
                     if (!string.IsNullOrWhiteSpace(path))
@@ -49,9 +50,18 @@ public static class YmmpxProjectJson
 
     public static int ReplaceFilePaths(JsonNode node, IReadOnlyDictionary<string, string> linkMap)
     {
-        var normalized = linkMap is Dictionary<string, string> dict && dict.Comparer.Equals(StringComparer.OrdinalIgnoreCase)
-            ? dict
-            : new Dictionary<string, string>(linkMap, StringComparer.OrdinalIgnoreCase);
+        var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in linkMap)
+        {
+            if (string.IsNullOrWhiteSpace(item.Key))
+                continue;
+
+            normalized[item.Key] = item.Value;
+
+            var normalizedKey = TryNormalizePath(item.Key);
+            if (!string.IsNullOrWhiteSpace(normalizedKey))
+                normalized[normalizedKey] = item.Value;
+        }
 
         return ReplaceFilePathsCore(node, normalized);
     }
@@ -64,28 +74,15 @@ public static class YmmpxProjectJson
         {
             foreach (var item in obj.ToList())
             {
-                if (item.Key == "FilePath" && item.Value is JsonValue value)
+                if (item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) && item.Value is JsonValue value)
                 {
                     var path = value.GetValue<string>();
                     if (!string.IsNullOrWhiteSpace(path))
                     {
-                        if (linkMap.TryGetValue(path, out var resolved))
+                        if (TryResolveMappedPath(linkMap, path, out var resolved))
                         {
                             obj["FilePath"] = resolved;
                             count++;
-                        }
-                        else
-                        {
-                            var match = linkMap
-                                .Where(x => path.Contains(x.Key, StringComparison.OrdinalIgnoreCase))
-                                .OrderByDescending(x => x.Key.Length)
-                                .FirstOrDefault();
-
-                            if (!string.IsNullOrWhiteSpace(match.Key))
-                            {
-                                obj["FilePath"] = match.Value;
-                                count++;
-                            }
                         }
                     }
                 }
@@ -105,5 +102,55 @@ public static class YmmpxProjectJson
         }
 
         return count;
+    }
+
+    private static bool TryResolveMappedPath(Dictionary<string, string> linkMap, string path, out string mappedPath)
+    {
+        mappedPath = string.Empty;
+
+        if (linkMap.TryGetValue(path, out var directMappedPath))
+        {
+            mappedPath = directMappedPath;
+            return true;
+        }
+
+        var normalizedPath = TryNormalizePath(path);
+        if (!string.IsNullOrWhiteSpace(normalizedPath) && linkMap.TryGetValue(normalizedPath, out var normalizedMappedPath))
+        {
+            mappedPath = normalizedMappedPath;
+            return true;
+        }
+
+        var fileName = Path.GetFileName(path);
+        if (string.IsNullOrWhiteSpace(fileName))
+            return false;
+
+        var matchedValue = linkMap
+            .Where(x => string.Equals(Path.GetFileName(x.Key), fileName, StringComparison.OrdinalIgnoreCase))
+            .Select(x => x.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (matchedValue.Count != 1)
+            return false;
+
+        mappedPath = matchedValue[0];
+        return true;
+    }
+
+    private static string? TryNormalizePath(string path)
+    {
+        try
+        {
+            if (Uri.TryCreate(path, UriKind.Absolute, out var uri) && uri.IsFile)
+                return Path.GetFullPath(uri.LocalPath);
+
+            path = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
+            return Path.GetFullPath(path);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 }

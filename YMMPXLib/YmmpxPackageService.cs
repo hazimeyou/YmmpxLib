@@ -21,18 +21,16 @@ public static class YmmpxPackageService
         if (!File.Exists(projectFilePath))
             throw new FileNotFoundException("Project file was not found.", projectFilePath);
 
-        var projectBaseDirectory = Path.GetDirectoryName(Path.GetFullPath(projectFilePath)) ?? Directory.GetCurrentDirectory();
-        var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (excludedFiles is not null)
-        {
-            foreach (var path in excludedFiles)
-            {
-                if (string.IsNullOrWhiteSpace(path))
-                    continue;
+        var normalizedProjectPath = Path.GetFullPath(projectFilePath);
+        var projectDirectory = Path.GetDirectoryName(normalizedProjectPath)
+            ?? throw new DirectoryNotFoundException($"Project directory was not found: {projectFilePath}");
 
-                excluded.Add(NormalizePath(projectBaseDirectory, path));
-            }
-        }
+        var excluded = excludedFiles is null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : excludedFiles
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => NormalizePath(projectDirectory, path))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var projectText = await File.ReadAllTextAsync(projectFilePath, cancellationToken).ConfigureAwait(false);
         options ??= new YmmpxPackagingOptions();
@@ -59,9 +57,12 @@ public static class YmmpxPackageService
             .Select(originalPath => new
             {
                 OriginalPath = originalPath,
-                ResolvedPath = NormalizePath(projectBaseDirectory, originalPath)
+                ResolvedPath = NormalizePath(projectDirectory, originalPath)
             })
-            .Where(x => File.Exists(x.ResolvedPath) && !excluded.Contains(x.ResolvedPath))
+            .Where(x =>
+                File.Exists(x.ResolvedPath) &&
+                !excluded.Contains(x.ResolvedPath) &&
+                !string.Equals(x.ResolvedPath, normalizedProjectPath, GetPathComparison()))
             .ToList();
 
         progress?.Report(new YmmpxPackagingProgress(0, resourceEntries.Count, "Collecting resources"));
@@ -160,7 +161,7 @@ public static class YmmpxPackageService
         if (!File.Exists(ymmpxPath))
             throw new FileNotFoundException("Ymmpx file was not found.", ymmpxPath);
 
-        ZipFile.ExtractToDirectory(ymmpxPath, extractDirectory);
+        ExtractArchiveSafely(ymmpxPath, extractDirectory);
 
         var linkMap = LoadLinkMap(extractDirectory);
         var markerPath = Path.Combine(extractDirectory, "_ymmpx_project_path.txt");
@@ -209,35 +210,114 @@ public static class YmmpxPackageService
 
         File.WriteAllText(projectPath, root.ToJsonString(writeOptions));
 
+        var ymmpxBaseName = Path.GetFileNameWithoutExtension(ymmpxPath);
+        if (!string.IsNullOrWhiteSpace(ymmpxBaseName))
+        {
+            var desiredProjectPath = Path.Combine(extractDirectory, $"{ymmpxBaseName}.ymmp");
+            if (!string.Equals(projectPath, desiredProjectPath, StringComparison.OrdinalIgnoreCase))
+            {
+                var finalProjectPath = GetAvailableFilePath(desiredProjectPath);
+                if (File.Exists(finalProjectPath))
+                    File.Delete(finalProjectPath);
+
+                File.Move(projectPath, finalProjectPath);
+                projectPath = finalProjectPath;
+            }
+        }
+
         return new YmmpxUnpackResult(extractDirectory, projectPath, replacedCount, linkMap);
     }
 
     public static Dictionary<string, string> LoadLinkMap(string baseDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseDirectory);
+        var linkMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         var linksJsonPath = Path.Combine(baseDirectory, "links.json");
         if (File.Exists(linksJsonPath))
         {
-            var jsonMap = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(linksJsonPath));
-            if (jsonMap is not null)
+            try
             {
-                return jsonMap.ToDictionary(
-                    x => x.Key,
-                    x => ResolvePath(baseDirectory, x.Value),
-                    StringComparer.OrdinalIgnoreCase);
+                var jsonMap = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(linksJsonPath));
+                if (jsonMap is not null)
+                {
+                    foreach (var item in jsonMap)
+                    {
+                        if (string.IsNullOrWhiteSpace(item.Key) || string.IsNullOrWhiteSpace(item.Value))
+                            continue;
+                        if (!TryResolvePathWithinBaseDirectory(baseDirectory, item.Value, out var resolvedPath))
+                            continue;
+                        linkMap[item.Key] = resolvedPath;
+                    }
+                    return linkMap;
+                }
+            }
+            catch (JsonException)
+            {
+                // Fallback to links.txt when links.json is malformed.
+            }
+        }
+
+        var manifestPath = Path.Combine(baseDirectory, "manifest.json");
+        if (File.Exists(manifestPath))
+        {
+            try
+            {
+                using var manifestDoc = JsonDocument.Parse(File.ReadAllText(manifestPath));
+                if (manifestDoc.RootElement.ValueKind == JsonValueKind.Object &&
+                    manifestDoc.RootElement.TryGetProperty("Files", out var filesElement) &&
+                    filesElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var fileEntry in filesElement.EnumerateArray())
+                    {
+                        if (fileEntry.ValueKind != JsonValueKind.Object)
+                            continue;
+
+                        if (!fileEntry.TryGetProperty("OriginalPath", out var originalPathElement) ||
+                            originalPathElement.ValueKind != JsonValueKind.String)
+                            continue;
+
+                        if (!fileEntry.TryGetProperty("BundlePath", out var bundlePathElement) ||
+                            bundlePathElement.ValueKind != JsonValueKind.String)
+                            continue;
+
+                        var originalPath = originalPathElement.GetString();
+                        var bundlePath = bundlePathElement.GetString();
+                        if (string.IsNullOrWhiteSpace(originalPath) || string.IsNullOrWhiteSpace(bundlePath))
+                            continue;
+
+                        if (!TryResolvePathWithinBaseDirectory(baseDirectory, bundlePath, out var resolvedPath))
+                            continue;
+
+                        linkMap[Path.GetFullPath(originalPath)] = resolvedPath;
+                    }
+
+                    if (linkMap.Count > 0)
+                        return linkMap;
+                }
+            }
+            catch (JsonException)
+            {
+                // Fallback to links.txt when manifest.json is malformed.
             }
         }
 
         var linksPath = Path.Combine(baseDirectory, "links.txt");
-        var linkMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (File.Exists(linksPath))
         {
             foreach (var line in File.ReadAllLines(linksPath))
             {
                 var parts = line.Split(',', 2);
                 if (parts.Length == 2)
-                    linkMap[parts[0].Trim()] = ResolvePath(baseDirectory, parts[1].Trim());
+                {
+                    var source = parts[0].Trim();
+                    var packagedPath = parts[1].Trim();
+                    if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(packagedPath))
+                        continue;
+                    if (!TryResolvePathWithinBaseDirectory(baseDirectory, packagedPath, out var resolvedPath))
+                        continue;
+                    linkMap[source] = resolvedPath;
+                }
             }
         }
 
@@ -284,16 +364,74 @@ public static class YmmpxPackageService
     private static string ResolvePath(string baseDirectory, string relativeOrAbsolutePath)
     {
         if (Path.IsPathRooted(relativeOrAbsolutePath))
-            return relativeOrAbsolutePath;
-
-        return Path.Combine(baseDirectory, relativeOrAbsolutePath);
-    }
-
-    private static string NormalizePath(string baseDirectory, string relativeOrAbsolutePath)
-    {
-        if (Path.IsPathRooted(relativeOrAbsolutePath))
             return Path.GetFullPath(relativeOrAbsolutePath);
 
         return Path.GetFullPath(Path.Combine(baseDirectory, relativeOrAbsolutePath));
+    }
+
+    private static void ExtractArchiveSafely(string ymmpxPath, string extractDirectory)
+    {
+        Directory.CreateDirectory(extractDirectory);
+
+        var baseDirectory = EnsureTrailingDirectorySeparator(Path.GetFullPath(extractDirectory));
+
+        using var archive = ZipFile.OpenRead(ymmpxPath);
+        foreach (var entry in archive.Entries)
+        {
+            var destinationPath = Path.GetFullPath(Path.Combine(extractDirectory, entry.FullName));
+            if (!destinationPath.StartsWith(baseDirectory, GetPathComparison()))
+                throw new InvalidDataException($"Entry path escapes extraction directory: {entry.FullName}");
+
+            if (string.IsNullOrEmpty(entry.Name))
+            {
+                Directory.CreateDirectory(destinationPath);
+                continue;
+            }
+
+            var destinationDirectory = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrWhiteSpace(destinationDirectory))
+                Directory.CreateDirectory(destinationDirectory);
+
+            entry.ExtractToFile(destinationPath, overwrite: false);
+        }
+    }
+
+    private static bool TryResolvePathWithinBaseDirectory(string baseDirectory, string relativePath, out string resolvedPath)
+    {
+        resolvedPath = string.Empty;
+        if (Path.IsPathRooted(relativePath))
+            return false;
+
+        var candidate = ResolvePath(baseDirectory, relativePath);
+        var normalizedBaseDirectory = EnsureTrailingDirectorySeparator(Path.GetFullPath(baseDirectory));
+        if (!candidate.StartsWith(normalizedBaseDirectory, GetPathComparison()))
+            return false;
+
+        resolvedPath = candidate;
+        return true;
+    }
+
+    private static string EnsureTrailingDirectorySeparator(string path)
+    {
+        if (path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar))
+            return path;
+        return path + Path.DirectorySeparatorChar;
+    }
+
+    private static StringComparison GetPathComparison()
+    {
+        return OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    }
+
+    private static string NormalizePath(string baseDirectory, string path)
+    {
+        path = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
+        if (Uri.TryCreate(path, UriKind.Absolute, out var uri) && uri.IsFile)
+            return Path.GetFullPath(uri.LocalPath);
+
+        if (Path.IsPathRooted(path))
+            return Path.GetFullPath(path);
+
+        return Path.GetFullPath(Path.Combine(baseDirectory, path));
     }
 }
