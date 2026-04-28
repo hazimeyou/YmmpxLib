@@ -43,22 +43,6 @@ public static class YmmpxPackageService
         var projectText = await File.ReadAllTextAsync(projectFilePath, cancellationToken).ConfigureAwait(false);
         options ??= new YmmpxPackagingOptions();
 
-        // 必要に応じて UI 状態を除外した JSON をパッケージ用に生成する。
-        var projectTextForPackage = projectText;
-        if (!options.IncludeProjectUiSettings)
-        {
-            var projectNode = JsonNode.Parse(projectTextForPackage);
-            if (projectNode is not null)
-            {
-                YmmpxProjectJson.RemoveUiSettings(projectNode);
-                projectTextForPackage = projectNode.ToJsonString(new JsonSerializerOptions
-                {
-                    WriteIndented = false,
-                    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-                });
-            }
-        }
-//ここから
         // 元 JSON を解析し、参照ファイル (FilePath) の一覧を作る。
         using var document = JsonDocument.Parse(projectText);
         var resourceEntries = YmmpxProjectJson
@@ -67,7 +51,7 @@ public static class YmmpxPackageService
             .Select(originalPath => new
             {
                 OriginalPath = originalPath,
-                ResolvedPath = NormalizePath(projectDirectory, originalPath)
+                ResolvedPath = NormalizePath(projectDirectory, originalPath),
             })
             .Where(x =>
                 File.Exists(x.ResolvedPath) &&
@@ -75,6 +59,45 @@ public static class YmmpxPackageService
                 !string.Equals(x.ResolvedPath, normalizedProjectPath, GetPathComparison()))
             .ToList();
 
+        // 相対パス化後の対応表を先に作り、JSON 書き換えと links.json で共用する。
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var fileMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var filesToPackage = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in resourceEntries)
+        {
+            var relativeProjectPath = NormalizeProjectPath(Path.GetRelativePath(projectDirectory, entry.ResolvedPath));
+            var fileName = Path.GetFileName(entry.ResolvedPath);
+            var uniqueFileName = GetUniqueFileName(fileName, usedNames);
+            var packagedPath = $"resources/{uniqueFileName}";
+
+            fileMap[relativeProjectPath] = packagedPath;
+            filesToPackage[entry.ResolvedPath] = packagedPath;
+        }
+
+        // 必要に応じて UI 状態除外 + FilePath の相対化を行った JSON をパッケージ化する。
+        var projectTextForPackage = projectText;
+        var projectNode = JsonNode.Parse(projectTextForPackage);
+        if (projectNode is not null)
+        {
+            if (!options.IncludeProjectUiSettings)
+                YmmpxProjectJson.RemoveUiSettings(projectNode);
+
+            YmmpxProjectJson.ReplaceFilePathsForPackaging(projectNode, sourcePath =>
+            {
+                var resolved = NormalizePath(projectDirectory, sourcePath);
+                return File.Exists(resolved)
+                    ? NormalizeProjectPath(Path.GetRelativePath(projectDirectory, resolved))
+                    : null;
+            });
+
+            projectTextForPackage = projectNode.ToJsonString(new JsonSerializerOptions
+            {
+                WriteIndented = false,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            });
+        }
+
+        // 元 JSON を解析し、参照ファイル (FilePath) の一覧を作る。
         progress?.Report(new YmmpxPackagingProgress(0, resourceEntries.Count, "Collecting resources")); 
         // links ファイルを一時生成するための作業ディレクトリ。
         var tempDir = Path.Combine(Path.GetTempPath(), "YmmpxLib", Guid.NewGuid().ToString("N"));
@@ -83,11 +106,6 @@ public static class YmmpxPackageService
         try
         {
             var linksJsonFile = Path.Combine(tempDir, "links.json");
-
-            var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var fileMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var filesToPackage = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
 
             // links.json は扱いやすい JSON 形式のマニフェストとして同梱する。
             await File.WriteAllTextAsync(
@@ -119,7 +137,8 @@ public static class YmmpxPackageService
                 {
                     await markerWriter.WriteAsync(projectEntryName).ConfigureAwait(false);
                 }
-//ここまで詳細コメント追加お願いします
+                // 上で組み立てた fileMap / filesToPackage を使って、
+                // 「相対 FilePath -> resources 内実体」の対応を同梱する。
 
                 // 旧バージョン互換性は同梱時不要。展開時のみ互換性を保つ
                 zip.CreateEntryFromFile(linksJsonFile, "links.json");
@@ -453,5 +472,27 @@ public static class YmmpxPackageService
             return Path.GetFullPath(path);
 
         return Path.GetFullPath(Path.Combine(baseDirectory, path));
+    }
+
+    private static string NormalizeProjectPath(string path)
+    {
+        // プロジェクト JSON 内では OS 差分を避けるため区切りを '/' に揃える。
+        return path.Replace('\\', '/');
+    }
+
+    private static string GetUniqueFileName(string fileName, ISet<string> usedNames)
+    {
+        var baseName = Path.GetFileNameWithoutExtension(fileName);
+        var extension = Path.GetExtension(fileName);
+        var candidate = fileName;
+        var suffix = 1;
+
+        while (!usedNames.Add(candidate))
+        {
+            candidate = $"{baseName}_{suffix}{extension}";
+            suffix++;
+        }
+
+        return candidate;
     }
 }

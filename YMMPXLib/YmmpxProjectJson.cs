@@ -85,6 +85,19 @@ public static class YmmpxProjectJson
         return ReplaceFilePathsCore(node, normalized);
     }
 
+    /// <summary>
+    /// パッケージ作成時に JSON 内の <c>FilePath</c> を任意の形式へ変換します。
+    /// </summary>
+    /// <param name="node">対象 JSON ノード。</param>
+    /// <param name="pathConverter">変換関数。null を返した場合は未変更のままにします。</param>
+    /// <returns>置換件数。</returns>
+    public static int ReplaceFilePathsForPackaging(JsonNode node, Func<string, string?> pathConverter)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        ArgumentNullException.ThrowIfNull(pathConverter);
+        return ReplaceFilePathsForPackagingCore(node, pathConverter);
+    }
+
     private static int ReplaceFilePathsCore(JsonNode node, Dictionary<string, string> linkMap)
     {
         var count = 0;
@@ -159,6 +172,45 @@ public static class YmmpxProjectJson
 
         mappedPath = matchedValue[0];
         return true;
+    }
+
+    private static int ReplaceFilePathsForPackagingCore(JsonNode node, Func<string, string?> pathConverter)
+    {
+        var count = 0;
+
+        if (node is JsonObject obj)
+        {
+            foreach (var item in obj.ToList())
+            {
+                if (item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) && item.Value is JsonValue value)
+                {
+                    var path = value.GetValue<string>();
+                    if (!string.IsNullOrWhiteSpace(path))
+                    {
+                        var converted = pathConverter(path);
+                        if (!string.IsNullOrWhiteSpace(converted) && !string.Equals(path, converted, StringComparison.Ordinal))
+                        {
+                            obj["FilePath"] = converted;
+                            count++;
+                        }
+                    }
+                }
+                else if (item.Value is not null)
+                {
+                    count += ReplaceFilePathsForPackagingCore(item.Value, pathConverter);
+                }
+            }
+        }
+        else if (node is JsonArray arr)
+        {
+            foreach (var child in arr)
+            {
+                if (child is not null)
+                    count += ReplaceFilePathsForPackagingCore(child, pathConverter);
+            }
+        }
+
+        return count;
     }
 
     private static string? TryNormalizePath(string path)
