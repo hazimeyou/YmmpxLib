@@ -1,12 +1,18 @@
-using System.IO.Compression;
+﻿using System.IO.Compression;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace YmmpxLib;
 
+/// <summary>
+/// YMMP プロジェクトを YMMPX 形式で圧縮・展開するサービスです。
+/// </summary>
 public static class YmmpxPackageService
 {
+    /// <summary>
+    /// プロジェクト JSON と参照リソースを収集し、YMMPX アーカイブを作成します。
+    /// </summary>
     public static async Task<YmmpxPackagingResult> CreatePackageAsync(
         string projectFilePath,
         string outputPath,
@@ -21,10 +27,12 @@ public static class YmmpxPackageService
         if (!File.Exists(projectFilePath))
             throw new FileNotFoundException("Project file was not found.", projectFilePath);
 
+        // 入力プロジェクトの基準パスを決定する。
         var normalizedProjectPath = Path.GetFullPath(projectFilePath);
         var projectDirectory = Path.GetDirectoryName(normalizedProjectPath)
             ?? throw new DirectoryNotFoundException($"Project directory was not found: {projectFilePath}");
 
+        // 除外対象を絶対パスに正規化して比較可能にする。
         var excluded = excludedFiles is null
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : excludedFiles
@@ -35,6 +43,7 @@ public static class YmmpxPackageService
         var projectText = await File.ReadAllTextAsync(projectFilePath, cancellationToken).ConfigureAwait(false);
         options ??= new YmmpxPackagingOptions();
 
+        // 必要に応じて UI 状態を除外した JSON をパッケージ用に生成する。
         var projectTextForPackage = projectText;
         if (!options.IncludeProjectUiSettings)
         {
@@ -49,7 +58,8 @@ public static class YmmpxPackageService
                 });
             }
         }
-
+//ここから
+        // 元 JSON を解析し、参照ファイル (FilePath) の一覧を作る。
         using var document = JsonDocument.Parse(projectText);
         var resourceEntries = YmmpxProjectJson
             .FindFilePaths(document.RootElement)
@@ -65,56 +75,27 @@ public static class YmmpxPackageService
                 !string.Equals(x.ResolvedPath, normalizedProjectPath, GetPathComparison()))
             .ToList();
 
-        progress?.Report(new YmmpxPackagingProgress(0, resourceEntries.Count, "Collecting resources"));
-
+        progress?.Report(new YmmpxPackagingProgress(0, resourceEntries.Count, "Collecting resources")); 
+        // links ファイルを一時生成するための作業ディレクトリ。
         var tempDir = Path.Combine(Path.GetTempPath(), "YmmpxLib", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
 
         try
         {
-            var linksFile = Path.Combine(tempDir, "links.txt");
             var linksJsonFile = Path.Combine(tempDir, "links.json");
 
             var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var fileMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var filesToPackage = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            await using (var writer = new StreamWriter(linksFile, false))
-            {
-                for (var i = 0; i < resourceEntries.Count; i++)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
 
-                    var entry = resourceEntries[i];
-                    if (!filesToPackage.TryGetValue(entry.ResolvedPath, out var zipPath))
-                    {
-                        var originalName = Path.GetFileName(entry.ResolvedPath);
-                        var uniqueName = originalName;
-                        var suffix = 1;
-
-                        while (usedNames.Contains(uniqueName))
-                        {
-                            uniqueName =
-                                $"{Path.GetFileNameWithoutExtension(originalName)}_{suffix++}{Path.GetExtension(originalName)}";
-                        }
-
-                        usedNames.Add(uniqueName);
-                        zipPath = $"resources/{uniqueName}";
-                        filesToPackage[entry.ResolvedPath] = zipPath;
-                    }
-
-                    fileMap[entry.OriginalPath] = zipPath;
-
-                    await writer.WriteLineAsync($"{entry.OriginalPath},{zipPath}").ConfigureAwait(false);
-                    progress?.Report(new YmmpxPackagingProgress(i + 1, resourceEntries.Count, "Building package"));
-                }
-            }
-
+            // links.json は扱いやすい JSON 形式のマニフェストとして同梱する。
             await File.WriteAllTextAsync(
                 linksJsonFile,
                 JsonSerializer.Serialize(fileMap, new JsonSerializerOptions { WriteIndented = true }),
                 cancellationToken).ConfigureAwait(false);
 
+            // プロジェクトエントリ名は必ず .ymmp 拡張子に統一する。
             var projectEntryName = Path.GetFileName(projectFilePath);
             if (string.IsNullOrWhiteSpace(projectEntryName))
                 projectEntryName = "project.ymmp";
@@ -123,6 +104,7 @@ public static class YmmpxPackageService
 
             using (var zip = ZipFile.Open(outputPath, ZipArchiveMode.Create))
             {
+                // プロジェクト本体 JSON を書き込む。
                 var projectEntry = zip.CreateEntry(projectEntryName);
                 await using (var projectStream = projectEntry.Open())
                 await using (var projectWriter = new StreamWriter(projectStream))
@@ -130,16 +112,19 @@ public static class YmmpxPackageService
                     await projectWriter.WriteAsync(projectTextForPackage).ConfigureAwait(false);
                 }
 
+                // 展開時にプロジェクトファイルを特定するためのマーカー。
                 var markerEntry = zip.CreateEntry("_ymmpx_project_path.txt");
                 await using (var markerStream = markerEntry.Open())
                 await using (var markerWriter = new StreamWriter(markerStream))
                 {
                     await markerWriter.WriteAsync(projectEntryName).ConfigureAwait(false);
                 }
+//ここまで詳細コメント追加お願いします
 
-                zip.CreateEntryFromFile(linksFile, "links.txt");
+                // 旧バージョン互換性は同梱時不要。展開時のみ互換性を保つ
                 zip.CreateEntryFromFile(linksJsonFile, "links.json");
 
+                // 実ファイルを resources/ 配下へ格納。
                 foreach (var (source, destination) in filesToPackage)
                     zip.CreateEntryFromFile(source, destination);
             }
@@ -148,11 +133,15 @@ public static class YmmpxPackageService
         }
         finally
         {
+            // 一時フォルダは成功/失敗にかかわらず必ず削除する。
             if (Directory.Exists(tempDir))
                 Directory.Delete(tempDir, true);
         }
     }
 
+    /// <summary>
+    /// YMMPX を展開し、プロジェクト JSON 内の FilePath を展開先へ復元します。
+    /// </summary>
     public static YmmpxUnpackResult ExtractAndRestoreProject(string ymmpxPath, string extractDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(ymmpxPath);
@@ -161,8 +150,10 @@ public static class YmmpxPackageService
         if (!File.Exists(ymmpxPath))
             throw new FileNotFoundException("Ymmpx file was not found.", ymmpxPath);
 
+        // Zip Slip 対策付きの安全展開を行う。
         ExtractArchiveSafely(ymmpxPath, extractDirectory);
 
+        // links.* / manifest.json を解釈してマップを読み込む。
         var linkMap = LoadLinkMap(extractDirectory);
         var markerPath = Path.Combine(extractDirectory, "_ymmpx_project_path.txt");
         var projectPath = string.Empty;
@@ -177,6 +168,7 @@ public static class YmmpxPackageService
             }
         }
 
+        // 旧形式のフォールバック。
         if (string.IsNullOrWhiteSpace(projectPath))
         {
             var legacyProject = Path.Combine(extractDirectory, "project.ymmp");
@@ -184,6 +176,7 @@ public static class YmmpxPackageService
                 projectPath = legacyProject;
         }
 
+        // さらに見つからない場合は展開先全体を探索。
         if (string.IsNullOrWhiteSpace(projectPath))
         {
             projectPath = Directory
@@ -200,6 +193,7 @@ public static class YmmpxPackageService
         if (root is null)
             throw new InvalidDataException("Failed to parse project JSON.");
 
+        // プロジェクト内 FilePath を展開済み実ファイルへ差し替える。
         var replacedCount = YmmpxProjectJson.ReplaceFilePaths(root, linkMap);
 
         var writeOptions = new JsonSerializerOptions
@@ -210,6 +204,7 @@ public static class YmmpxPackageService
 
         File.WriteAllText(projectPath, root.ToJsonString(writeOptions));
 
+        // デフォルトでは「アーカイブ名.ymmp」に寄せて扱いやすくする。
         var ymmpxBaseName = Path.GetFileNameWithoutExtension(ymmpxPath);
         if (!string.IsNullOrWhiteSpace(ymmpxBaseName))
         {
@@ -228,11 +223,18 @@ public static class YmmpxPackageService
         return new YmmpxUnpackResult(extractDirectory, projectPath, replacedCount, linkMap);
     }
 
+    /// <summary>
+    /// パッケージ内リンク定義を読み込み、元パス -> 展開後実パスの対応表を返します。
+    /// </summary>
+    /// <remarks>
+    /// 読み込み順は <c>links.json</c> -> <c>manifest.json</c> -> <c>links.txt</c> です。
+    /// </remarks>
     public static Dictionary<string, string> LoadLinkMap(string baseDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseDirectory);
         var linkMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+        // 現行形式: links.json
         var linksJsonPath = Path.Combine(baseDirectory, "links.json");
         if (File.Exists(linksJsonPath))
         {
@@ -254,10 +256,11 @@ public static class YmmpxPackageService
             }
             catch (JsonException)
             {
-                // Fallback to links.txt when links.json is malformed.
+                // links.json が壊れている場合は links.txt にフォールバックする。
             }
         }
 
+        // 旧互換形式: manifest.json
         var manifestPath = Path.Combine(baseDirectory, "manifest.json");
         if (File.Exists(manifestPath))
         {
@@ -298,10 +301,11 @@ public static class YmmpxPackageService
             }
             catch (JsonException)
             {
-                // Fallback to links.txt when manifest.json is malformed.
+                // manifest.json が壊れている場合は links.txt にフォールバックする。
             }
         }
 
+        // 最終フォールバック: CSV 形式の links.txt
         var linksPath = Path.Combine(baseDirectory, "links.txt");
         if (File.Exists(linksPath))
         {
@@ -324,6 +328,9 @@ public static class YmmpxPackageService
         return linkMap;
     }
 
+    /// <summary>
+    /// 既存フォルダと衝突しないディレクトリ名を生成します。
+    /// </summary>
     public static string GetAvailableDirectoryPath(string desiredPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(desiredPath);
@@ -339,6 +346,9 @@ public static class YmmpxPackageService
         return candidate;
     }
 
+    /// <summary>
+    /// 既存ファイルと衝突しないファイルパスを生成します。
+    /// </summary>
     public static string GetAvailableFilePath(string desiredPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(desiredPath);
@@ -361,6 +371,7 @@ public static class YmmpxPackageService
         return candidate;
     }
 
+    // 相対/絶対どちらでも絶対パスへ変換する。
     private static string ResolvePath(string baseDirectory, string relativeOrAbsolutePath)
     {
         if (Path.IsPathRooted(relativeOrAbsolutePath))
@@ -373,15 +384,18 @@ public static class YmmpxPackageService
     {
         Directory.CreateDirectory(extractDirectory);
 
+        // Zip Slip 対策として展開先ベースの prefix を固定する。
         var baseDirectory = EnsureTrailingDirectorySeparator(Path.GetFullPath(extractDirectory));
 
         using var archive = ZipFile.OpenRead(ymmpxPath);
         foreach (var entry in archive.Entries)
         {
+            // エントリの最終展開先を解決し、ベース配下か検証する。
             var destinationPath = Path.GetFullPath(Path.Combine(extractDirectory, entry.FullName));
             if (!destinationPath.StartsWith(baseDirectory, GetPathComparison()))
                 throw new InvalidDataException($"Entry path escapes extraction directory: {entry.FullName}");
 
+            // Name が空ならディレクトリエントリ。
             if (string.IsNullOrEmpty(entry.Name))
             {
                 Directory.CreateDirectory(destinationPath);
@@ -399,6 +413,7 @@ public static class YmmpxPackageService
     private static bool TryResolvePathWithinBaseDirectory(string baseDirectory, string relativePath, out string resolvedPath)
     {
         resolvedPath = string.Empty;
+        // マニフェスト上は相対パスのみ許可し、絶対パス注入を拒否する。
         if (Path.IsPathRooted(relativePath))
             return false;
 
@@ -411,6 +426,7 @@ public static class YmmpxPackageService
         return true;
     }
 
+    // 文字列比較時の誤一致を防ぐため、末尾区切りを必ず付与する。
     private static string EnsureTrailingDirectorySeparator(string path)
     {
         if (path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar))
@@ -418,6 +434,7 @@ public static class YmmpxPackageService
         return path + Path.DirectorySeparatorChar;
     }
 
+    // OS ごとのパス比較ルールを統一する。
     private static StringComparison GetPathComparison()
     {
         return OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -425,10 +442,13 @@ public static class YmmpxPackageService
 
     private static string NormalizePath(string baseDirectory, string path)
     {
+        // 環境変数と引用符を展開/除去して入力ゆれを吸収する。
         path = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
+        // file:// URI はローカルパスへ戻す。
         if (Uri.TryCreate(path, UriKind.Absolute, out var uri) && uri.IsFile)
             return Path.GetFullPath(uri.LocalPath);
 
+        // 相対パスはプロジェクト基準で解決する。
         if (Path.IsPathRooted(path))
             return Path.GetFullPath(path);
 

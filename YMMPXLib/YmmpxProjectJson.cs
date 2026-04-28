@@ -1,10 +1,19 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace YmmpxLib;
 
+/// <summary>
+/// YMMP プロジェクト JSON の読み取り・書き換えを行うユーティリティです。
+/// </summary>
 public static class YmmpxProjectJson
 {
+    /// <summary>
+    /// プロジェクト JSON から UI 状態関連の項目を削除します。
+    /// </summary>
+    /// <remarks>
+    /// UI レイアウト状態は環境依存になりやすいため、配布用途では除外することがあります。
+    /// </remarks>
     public static bool RemoveUiSettings(JsonNode node)
     {
         if (node is not JsonObject root)
@@ -15,12 +24,16 @@ public static class YmmpxProjectJson
         return removedLayoutXml || removedToolStates;
     }
 
+    /// <summary>
+    /// JSON を再帰的に走査し、<c>FilePath</c> プロパティの値を列挙します。
+    /// </summary>
     public static IEnumerable<string> FindFilePaths(JsonElement element)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
             foreach (var property in element.EnumerateObject())
             {
+                // FilePath プロパティの文字列値を返す。
                 if (property.Name.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
                     property.Value.ValueKind == JsonValueKind.String)
                 {
@@ -30,6 +43,7 @@ public static class YmmpxProjectJson
                 }
                 else
                 {
+                    // 子要素を継続して走査する。
                     foreach (var childPath in FindFilePaths(property.Value))
                         yield return childPath;
                 }
@@ -48,8 +62,13 @@ public static class YmmpxProjectJson
         }
     }
 
+    /// <summary>
+    /// JSON 内の <c>FilePath</c> を対応マップに従って置換します。
+    /// </summary>
+    /// <returns>置換できたパス数。</returns>
     public static int ReplaceFilePaths(JsonNode node, IReadOnlyDictionary<string, string> linkMap)
     {
+        // パス表記ゆれを吸収できるよう正規化キー込みの辞書を作る。
         var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in linkMap)
         {
@@ -79,6 +98,7 @@ public static class YmmpxProjectJson
                     var path = value.GetValue<string>();
                     if (!string.IsNullOrWhiteSpace(path))
                     {
+                        // 完全一致 -> 正規化一致 -> ファイル名一意一致 の順で解決する。
                         if (TryResolveMappedPath(linkMap, path, out var resolved))
                         {
                             obj["FilePath"] = resolved;
@@ -108,12 +128,14 @@ public static class YmmpxProjectJson
     {
         mappedPath = string.Empty;
 
+        // 1) キーの完全一致。
         if (linkMap.TryGetValue(path, out var directMappedPath))
         {
             mappedPath = directMappedPath;
             return true;
         }
 
+        // 2) パス正規化後の一致。
         var normalizedPath = TryNormalizePath(path);
         if (!string.IsNullOrWhiteSpace(normalizedPath) && linkMap.TryGetValue(normalizedPath, out var normalizedMappedPath))
         {
@@ -121,6 +143,7 @@ public static class YmmpxProjectJson
             return true;
         }
 
+        // 3) 最終フォールバックとしてファイル名の一意一致を使う。
         var fileName = Path.GetFileName(path);
         if (string.IsNullOrWhiteSpace(fileName))
             return false;
@@ -142,6 +165,7 @@ public static class YmmpxProjectJson
     {
         try
         {
+            // file:// URI はローカルパスへ変換する。
             if (Uri.TryCreate(path, UriKind.Absolute, out var uri) && uri.IsFile)
                 return Path.GetFullPath(uri.LocalPath);
 
