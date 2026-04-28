@@ -8,6 +8,7 @@ on:
 env:
   PROJECT_PATH: YMMPXLib/YmmpxLib.csproj
   PUBLISH_DIR: publish
+  PACKAGE_DIR: package
 
 jobs:
   build_and_release:
@@ -36,11 +37,37 @@ jobs:
       - name: Publish
         run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -p:VersionPrefix=$VERSION -o ${{ env.PUBLISH_DIR }}
 
+      - name: Prepare Release Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ env.PUBLISH_DIR }}" | Out-Null
+          New-Item -ItemType Directory -Force -Path "${{ env.PACKAGE_DIR }}" | Out-Null
+
+          Copy-Item -Path "README.md" -Destination "${{ env.PUBLISH_DIR }}\\README.md" -Force
+          Copy-Item -Path "LICENSE.txt" -Destination "${{ env.PUBLISH_DIR }}\\LICENSE.txt" -Force
+
+          if (Test-Path "${{ env.PUBLISH_DIR }}\\YmmpxLib.pdb") {
+            Remove-Item "${{ env.PUBLISH_DIR }}\\YmmpxLib.pdb" -Force
+          }
+
+          $zipName = "YmmpxLib-${{ github.ref_name }}.zip"
+          $zipPath = Join-Path "${{ env.PACKAGE_DIR }}" $zipName
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+
+          Compress-Archive -Path `
+            "${{ env.PUBLISH_DIR }}\\YmmpxLib.dll", `
+            "${{ env.PUBLISH_DIR }}\\YmmpxLib.deps.json", `
+            "${{ env.PUBLISH_DIR }}\\README.md", `
+            "${{ env.PUBLISH_DIR }}\\LICENSE.txt" `
+            -DestinationPath $zipPath
+
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref_name }}
-          artifacts: publish/YmmpxLib.dll
+          artifacts: package/YmmpxLib-${{ github.ref_name }}.zip
           draft: true
           prerelease: true

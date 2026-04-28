@@ -130,3 +130,4 @@ Console.WriteLine(unpack.ProjectFilePath);
 
 - 展開時は `links.json` を優先し、次に `manifest.json`、最後に `links.txt`（後方互換）を参照します。
 - パッケージには `_ymmpx_project_path.txt` を含め、元のプロジェクトファイル名を保持します。
+- 配布は GitHub Releases の ZIP（`YmmpxLib-v*.zip`）を利用してください。
