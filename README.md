@@ -4,7 +4,7 @@
 
 ## 対象機能
 
-- `.ymmp` + 素材ファイルを `.ymmpx` にパッケージング
+- `.ymmp` + 素材ファイルを `.ymmpx` にパッケージング（同梱時 `FilePath` はファイル名化）
 - `.ymmpx` を展開し、`FilePath` を展開先の実ファイルへ復元
 - プロジェクト JSON の `FilePath` 列挙/置換
 - 任意で UI 設定 (`LayoutXml`, `ToolStates`) を除外してパッケージ化
@@ -35,7 +35,7 @@ Task<YmmpxPackagingResult> CreatePackageAsync(
 
 - `OutputPath`: 作成した `.ymmpx` パス
 - `ResourceCount`: 同梱した素材数
-- `FileMap`: `元素材パス -> パッケージ内パス(resources/...)`
+- `FileMap`: `保存ファイル名 -> パッケージ内パス(resources/...)`
 
 ### YmmpxPackageService.ExtractAndRestoreProject
 
@@ -54,7 +54,7 @@ YmmpxUnpackResult ExtractAndRestoreProject(
 - `ExtractDirectory`: 展開先
 - `ProjectFilePath`: 復元後 `.ymmp` のフルパス
 - `ReplacedPathCount`: 置換件数
-- `LinkMap`: `元素材パス -> 展開先素材パス`
+- `LinkMap`: `保存ファイル名 -> 展開先素材パス`
 
 ### YmmpxProjectJson
 
@@ -131,3 +131,21 @@ Console.WriteLine(unpack.ProjectFilePath);
 - 展開時は `links.json` を優先し、次に `manifest.json`、最後に `links.txt`（後方互換）を参照します。
 - パッケージには `_ymmpx_project_path.txt` を含め、元のプロジェクトファイル名を保持します。
 - 配布は GitHub Releases の ZIP（`YmmpxLib-v*.zip`）を利用してください。
+
+## 対応拡張子
+
+- .ymmp: パッケージ入力（同梱元）
+- .ymmpx: パッケージ出力 / 展開入力
+
+## CLI
+
+サンプルとして YMMPXCli を利用できます。
+
+- プロジェクト: [YMMPXCli/YMMPXCli.csproj](YMMPXCli/YMMPXCli.csproj)
+- ライブラリ: [YMMPXLib/YmmpxLib.csproj](YMMPXLib/YmmpxLib.csproj)
+- 実行例: dotnet run --project .\\YMMPXCli\\YMMPXCli.csproj -- "C:\\path\\to\\project.ymmp"
+- 実行例: dotnet run --project .\\YMMPXCli\\YMMPXCli.csproj -- "C:\\path\\to\\package.ymmpx"
+
+## ライセンス
+
+本リポジトリのライセンスは [LICENSE](LICENSE) を参照してください。

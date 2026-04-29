@@ -59,22 +59,22 @@ public static class YmmpxPackageService
                 !string.Equals(x.ResolvedPath, normalizedProjectPath, GetPathComparison()))
             .ToList();
 
-        // 相対パス化後の対応表を先に作り、JSON 書き換えと links.json で共用する。
+        // 保存名 (ファイル名ベース + 連番) の対応表を先に作り、JSON 書き換えと links.json で共用する。
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var packagedNameByResolvedPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var fileMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var filesToPackage = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in resourceEntries)
         {
-            var relativeProjectPath = NormalizeProjectPath(Path.GetRelativePath(projectDirectory, entry.ResolvedPath));
             var fileName = Path.GetFileName(entry.ResolvedPath);
             var uniqueFileName = GetUniqueFileName(fileName, usedNames);
             var packagedPath = $"resources/{uniqueFileName}";
-
-            fileMap[relativeProjectPath] = packagedPath;
+            packagedNameByResolvedPath[entry.ResolvedPath] = uniqueFileName;
+            fileMap[uniqueFileName] = packagedPath;
             filesToPackage[entry.ResolvedPath] = packagedPath;
         }
 
-        // 必要に応じて UI 状態除外 + FilePath の相対化を行った JSON をパッケージ化する。
+        // 必要に応じて UI 状態除外 + FilePath のファイル名化を行った JSON をパッケージ化する。
         var projectTextForPackage = projectText;
         var projectNode = JsonNode.Parse(projectTextForPackage);
         if (projectNode is not null)
@@ -85,8 +85,8 @@ public static class YmmpxPackageService
             YmmpxProjectJson.ReplaceFilePathsForPackaging(projectNode, sourcePath =>
             {
                 var resolved = NormalizePath(projectDirectory, sourcePath);
-                return File.Exists(resolved)
-                    ? NormalizeProjectPath(Path.GetRelativePath(projectDirectory, resolved))
+                return packagedNameByResolvedPath.TryGetValue(resolved, out var packagedName)
+                    ? packagedName
                     : null;
             });
 
@@ -268,7 +268,7 @@ public static class YmmpxPackageService
                             continue;
                         if (!TryResolvePathWithinBaseDirectory(baseDirectory, item.Value, out var resolvedPath))
                             continue;
-                        linkMap[item.Key] = resolvedPath;
+                        linkMap[NormalizeProjectPath(item.Key)] = resolvedPath;
                     }
                     return linkMap;
                 }
@@ -310,8 +310,7 @@ public static class YmmpxPackageService
 
                         if (!TryResolvePathWithinBaseDirectory(baseDirectory, bundlePath, out var resolvedPath))
                             continue;
-
-                        linkMap[Path.GetFullPath(originalPath)] = resolvedPath;
+                        linkMap[NormalizeProjectPath(originalPath)] = resolvedPath;
                     }
 
                     if (linkMap.Count > 0)
@@ -339,7 +338,7 @@ public static class YmmpxPackageService
                         continue;
                     if (!TryResolvePathWithinBaseDirectory(baseDirectory, packagedPath, out var resolvedPath))
                         continue;
-                    linkMap[source] = resolvedPath;
+                    linkMap[NormalizeProjectPath(source)] = resolvedPath;
                 }
             }
         }
