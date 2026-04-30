@@ -1,4 +1,5 @@
-ï»¿using System.IO.Compression;
+using System.IO.Compression;
+using System.Diagnostics;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -6,12 +7,12 @@ using System.Text.Json.Nodes;
 namespace YmmpxLib;
 
 /// <summary>
-/// YMMP ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆã‚’ YMMPX å½¢å¼ã§åœ§ç¸®ãƒ»å±•é–‹ã™ã‚‹ã‚µãƒ¼ãƒ“ã‚¹ã§ã™ã€‚
+/// YMMP ƒvƒƒWƒFƒNƒg‚ğ YMMPX Œ`®‚Åˆ³kE“WŠJ‚·‚éƒT[ƒrƒX‚Å‚·B
 /// </summary>
 public static class YmmpxPackageService
 {
     /// <summary>
-    /// ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆ JSON ã¨å‚ç…§ãƒªã‚½ãƒ¼ã‚¹ã‚’åé›†ã—ã€YMMPX ã‚¢ãƒ¼ã‚«ã‚¤ãƒ–ã‚’ä½œæˆã—ã¾ã™ã€‚
+    /// ƒvƒƒWƒFƒNƒg JSON ‚ÆQÆƒŠƒ\[ƒX‚ğûW‚µAYMMPX ƒA[ƒJƒCƒu‚ğì¬‚µ‚Ü‚·B
     /// </summary>
     public static async Task<YmmpxPackagingResult> CreatePackageAsync(
         string projectFilePath,
@@ -27,12 +28,12 @@ public static class YmmpxPackageService
         if (!File.Exists(projectFilePath))
             throw new FileNotFoundException("Project file was not found.", projectFilePath);
 
-        // å…¥åŠ›ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆã®åŸºæº–ãƒ‘ã‚¹ã‚’æ±ºå®šã™ã‚‹ã€‚
+        // “ü—ÍƒvƒƒWƒFƒNƒg‚ÌŠî€ƒpƒX‚ğŒˆ’è‚·‚éB
         var normalizedProjectPath = Path.GetFullPath(projectFilePath);
         var projectDirectory = Path.GetDirectoryName(normalizedProjectPath)
             ?? throw new DirectoryNotFoundException($"Project directory was not found: {projectFilePath}");
 
-        // é™¤å¤–å¯¾è±¡ã‚’çµ¶å¯¾ãƒ‘ã‚¹ã«æ­£è¦åŒ–ã—ã¦æ¯”è¼ƒå¯èƒ½ã«ã™ã‚‹ã€‚
+        // œŠO‘ÎÛ‚ğâ‘ÎƒpƒX‚É³‹K‰»‚µ‚Ä”äŠr‰Â”\‚É‚·‚éB
         var excluded = excludedFiles is null
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : excludedFiles
@@ -43,7 +44,7 @@ public static class YmmpxPackageService
         var projectText = await File.ReadAllTextAsync(projectFilePath, cancellationToken).ConfigureAwait(false);
         options ??= new YmmpxPackagingOptions();
 
-        // å…ƒ JSON ã‚’è§£æã—ã€å‚ç…§ãƒ•ã‚¡ã‚¤ãƒ« (FilePath) ã®ä¸€è¦§ã‚’ä½œã‚‹ã€‚
+        // Œ³ JSON ‚ğ‰ğÍ‚µAQÆƒtƒ@ƒCƒ‹ (FilePath) ‚Ìˆê——‚ğì‚éB
         using var document = JsonDocument.Parse(projectText);
         var resourceEntries = YmmpxProjectJson
             .FindFilePaths(document.RootElement)
@@ -59,7 +60,7 @@ public static class YmmpxPackageService
                 !string.Equals(x.ResolvedPath, normalizedProjectPath, GetPathComparison()))
             .ToList();
 
-        // ä¿å­˜å (ãƒ•ã‚¡ã‚¤ãƒ«åãƒ™ãƒ¼ã‚¹ + é€£ç•ª) ã®å¯¾å¿œè¡¨ã‚’å…ˆã«ä½œã‚Šã€JSON æ›¸ãæ›ãˆã¨ links.json ã§å…±ç”¨ã™ã‚‹ã€‚
+        // •Û‘¶–¼ (ƒtƒ@ƒCƒ‹–¼ƒx[ƒX + ˜A”Ô) ‚Ì‘Î‰•\‚ğæ‚Éì‚èAJSON ‘‚«Š·‚¦‚Æ links.json ‚Å‹¤—p‚·‚éB
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var packagedNameByResolvedPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var fileMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -74,7 +75,7 @@ public static class YmmpxPackageService
             filesToPackage[entry.ResolvedPath] = packagedPath;
         }
 
-        // å¿…è¦ã«å¿œã˜ã¦ UI çŠ¶æ…‹é™¤å¤– + FilePath ã®ãƒ•ã‚¡ã‚¤ãƒ«ååŒ–ã‚’è¡Œã£ãŸ JSON ã‚’ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸åŒ–ã™ã‚‹ã€‚
+        // •K—v‚É‰‚¶‚Ä UI ó‘ÔœŠO + FilePath ‚Ìƒtƒ@ƒCƒ‹–¼‰»‚ğs‚Á‚½ JSON ‚ğƒpƒbƒP[ƒW‰»‚·‚éB
         var projectTextForPackage = projectText;
         var projectNode = JsonNode.Parse(projectTextForPackage);
         if (projectNode is not null)
@@ -96,10 +97,8 @@ public static class YmmpxPackageService
                 Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             });
         }
-
-        // å…ƒ JSON ã‚’è§£æã—ã€å‚ç…§ãƒ•ã‚¡ã‚¤ãƒ« (FilePath) ã®ä¸€è¦§ã‚’ä½œã‚‹ã€‚
-        progress?.Report(new YmmpxPackagingProgress(0, resourceEntries.Count, "Collecting resources")); 
-        // links ãƒ•ã‚¡ã‚¤ãƒ«ã‚’ä¸€æ™‚ç”Ÿæˆã™ã‚‹ãŸã‚ã®ä½œæ¥­ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã€‚
+        var totalCount = filesToPackage.Count;
+        // links ƒtƒ@ƒCƒ‹‚ğˆê¶¬‚·‚é‚½‚ß‚Ìì‹ÆƒfƒBƒŒƒNƒgƒŠB
         var tempDir = Path.Combine(Path.GetTempPath(), "YmmpxLib", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
 
@@ -107,13 +106,40 @@ public static class YmmpxPackageService
         {
             var linksJsonFile = Path.Combine(tempDir, "links.json");
 
-            // links.json ã¯æ‰±ã„ã‚„ã™ã„ JSON å½¢å¼ã®ãƒãƒ‹ãƒ•ã‚§ã‚¹ãƒˆã¨ã—ã¦åŒæ¢±ã™ã‚‹ã€‚
+            // links.json ‚Íˆµ‚¢‚â‚·‚¢ JSON Œ`®‚Ìƒ}ƒjƒtƒFƒXƒg‚Æ‚µ‚Ä“¯«‚·‚éB
             await File.WriteAllTextAsync(
                 linksJsonFile,
                 JsonSerializer.Serialize(fileMap, new JsonSerializerOptions { WriteIndented = true }),
                 cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            // ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆã‚¨ãƒ³ãƒˆãƒªåã¯å¿…ãš .ymmp æ‹¡å¼µå­ã«çµ±ä¸€ã™ã‚‹ã€‚
+            var totalBytes = filesToPackage.Keys
+                .Select(source => new FileInfo(source).Length)
+                .Append(new FileInfo(linksJsonFile).Length)
+                .Sum();
+
+            long processedBytes = 0;
+            var completedCount = 0;
+            var reportGate = new ProgressReportGate();
+            void ReportProgress(string message, bool force = false)
+            {
+                if (progress is null)
+                    return;
+
+                if (!force && !reportGate.ShouldReport(processedBytes))
+                    return;
+
+                progress.Report(new YmmpxPackagingProgress(
+                    completedCount,
+                    totalCount,
+                    message,
+                    processedBytes,
+                    totalBytes));
+            }
+
+            ReportProgress("Collecting resources", force: true);
+
+            // ƒvƒƒWƒFƒNƒgƒGƒ“ƒgƒŠ–¼‚Í•K‚¸ .ymmp Šg’£q‚É“ˆê‚·‚éB
             var projectEntryName = Path.GetFileName(projectFilePath);
             if (string.IsNullOrWhiteSpace(projectEntryName))
                 projectEntryName = "project.ymmp";
@@ -122,7 +148,7 @@ public static class YmmpxPackageService
 
             using (var zip = ZipFile.Open(outputPath, ZipArchiveMode.Create))
             {
-                // ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆæœ¬ä½“ JSON ã‚’æ›¸ãè¾¼ã‚€ã€‚
+                // ƒvƒƒWƒFƒNƒg–{‘Ì JSON ‚ğ‘‚«‚ŞB
                 var projectEntry = zip.CreateEntry(projectEntryName);
                 await using (var projectStream = projectEntry.Open())
                 await using (var projectWriter = new StreamWriter(projectStream))
@@ -130,36 +156,64 @@ public static class YmmpxPackageService
                     await projectWriter.WriteAsync(projectTextForPackage).ConfigureAwait(false);
                 }
 
-                // å±•é–‹æ™‚ã«ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆãƒ•ã‚¡ã‚¤ãƒ«ã‚’ç‰¹å®šã™ã‚‹ãŸã‚ã®ãƒãƒ¼ã‚«ãƒ¼ã€‚
+                // “WŠJ‚ÉƒvƒƒWƒFƒNƒgƒtƒ@ƒCƒ‹‚ğ“Á’è‚·‚é‚½‚ß‚Ìƒ}[ƒJ[B
                 var markerEntry = zip.CreateEntry("_ymmpx_project_path.txt");
                 await using (var markerStream = markerEntry.Open())
                 await using (var markerWriter = new StreamWriter(markerStream))
                 {
                     await markerWriter.WriteAsync(projectEntryName).ConfigureAwait(false);
                 }
-                // ä¸Šã§çµ„ã¿ç«‹ã¦ãŸ fileMap / filesToPackage ã‚’ä½¿ã£ã¦ã€
-                // ã€Œç›¸å¯¾ FilePath -> resources å†…å®Ÿä½“ã€ã®å¯¾å¿œã‚’åŒæ¢±ã™ã‚‹ã€‚
+                // ã‚Å‘g‚İ—§‚Ä‚½ fileMap / filesToPackage ‚ğg‚Á‚ÄA
+                // u‘Š‘Î FilePath -> resources “àÀ‘Ìv‚Ì‘Î‰‚ğ“¯«‚·‚éB
 
-                // æ—§ãƒãƒ¼ã‚¸ãƒ§ãƒ³äº’æ›æ€§ã¯åŒæ¢±æ™‚ä¸è¦ã€‚å±•é–‹æ™‚ã®ã¿äº’æ›æ€§ã‚’ä¿ã¤
-                zip.CreateEntryFromFile(linksJsonFile, "links.json");
 
-                // å®Ÿãƒ•ã‚¡ã‚¤ãƒ«ã‚’ resources/ é…ä¸‹ã¸æ ¼ç´ã€‚
+                // ‹Œƒo[ƒWƒ‡ƒ“ŒİŠ·«‚Í“¯«•s—vB“WŠJ‚Ì‚İŒİŠ·«‚ğ•Û‚Â
+                await CopyFileToEntryWithProgressAsync(
+                    zip,
+                    linksJsonFile,
+                    "links.json",
+                    bytesWritten =>
+                    {
+                        processedBytes += bytesWritten;
+                        ReportProgress("Writing links.json");
+                    },
+                    cancellationToken).ConfigureAwait(false);
+                ReportProgress("Writing links.json", force: true);
+
+                // Àƒtƒ@ƒCƒ‹‚ğ resources/ ”z‰º‚ÖŠi”[B
                 foreach (var (source, destination) in filesToPackage)
-                    zip.CreateEntryFromFile(source, destination);
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await CopyFileToEntryWithProgressAsync(
+                        zip,
+                        source,
+                        destination,
+                        bytesWritten =>
+                        {
+                            processedBytes += bytesWritten;
+                            ReportProgress($"Packing {Path.GetFileName(source)}");
+                        },
+                        cancellationToken).ConfigureAwait(false);
+
+                    completedCount++;
+                    ReportProgress($"Packed {Path.GetFileName(source)}", force: true);
+                }
             }
+
+            ReportProgress("Completed", force: true);
 
             return new YmmpxPackagingResult(outputPath, filesToPackage.Count, fileMap);
         }
         finally
         {
-            // ä¸€æ™‚ãƒ•ã‚©ãƒ«ãƒ€ã¯æˆåŠŸ/å¤±æ•—ã«ã‹ã‹ã‚ã‚‰ãšå¿…ãšå‰Šé™¤ã™ã‚‹ã€‚
+            // ˆêƒtƒHƒ‹ƒ_‚Í¬Œ÷/¸”s‚É‚©‚©‚í‚ç‚¸•K‚¸íœ‚·‚éB
             if (Directory.Exists(tempDir))
                 Directory.Delete(tempDir, true);
         }
     }
 
     /// <summary>
-    /// YMMPX ã‚’å±•é–‹ã—ã€ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆ JSON å†…ã® FilePath ã‚’å±•é–‹å…ˆã¸å¾©å…ƒã—ã¾ã™ã€‚
+    /// YMMPX ‚ğ“WŠJ‚µAƒvƒƒWƒFƒNƒg JSON “à‚Ì FilePath ‚ğ“WŠJæ‚Ö•œŒ³‚µ‚Ü‚·B
     /// </summary>
     public static YmmpxUnpackResult ExtractAndRestoreProject(string ymmpxPath, string extractDirectory)
     {
@@ -169,10 +223,10 @@ public static class YmmpxPackageService
         if (!File.Exists(ymmpxPath))
             throw new FileNotFoundException("Ymmpx file was not found.", ymmpxPath);
 
-        // Zip Slip å¯¾ç­–ä»˜ãã®å®‰å…¨å±•é–‹ã‚’è¡Œã†ã€‚
+        // Zip Slip ‘Îô•t‚«‚ÌˆÀ‘S“WŠJ‚ğs‚¤B
         ExtractArchiveSafely(ymmpxPath, extractDirectory);
 
-        // links.* / manifest.json ã‚’è§£é‡ˆã—ã¦ãƒãƒƒãƒ—ã‚’èª­ã¿è¾¼ã‚€ã€‚
+        // links.* / manifest.json ‚ğ‰ğß‚µ‚Äƒ}ƒbƒv‚ğ“Ç‚İ‚ŞB
         var linkMap = LoadLinkMap(extractDirectory);
         var markerPath = Path.Combine(extractDirectory, "_ymmpx_project_path.txt");
         var projectPath = string.Empty;
@@ -187,7 +241,7 @@ public static class YmmpxPackageService
             }
         }
 
-        // æ—§å½¢å¼ã®ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ã€‚
+        // ‹ŒŒ`®‚ÌƒtƒH[ƒ‹ƒoƒbƒNB
         if (string.IsNullOrWhiteSpace(projectPath))
         {
             var legacyProject = Path.Combine(extractDirectory, "project.ymmp");
@@ -195,7 +249,7 @@ public static class YmmpxPackageService
                 projectPath = legacyProject;
         }
 
-        // ã•ã‚‰ã«è¦‹ã¤ã‹ã‚‰ãªã„å ´åˆã¯å±•é–‹å…ˆå…¨ä½“ã‚’æ¢ç´¢ã€‚
+        // ‚³‚ç‚ÉŒ©‚Â‚©‚ç‚È‚¢ê‡‚Í“WŠJæ‘S‘Ì‚ğ’TõB
         if (string.IsNullOrWhiteSpace(projectPath))
         {
             projectPath = Directory
@@ -212,7 +266,7 @@ public static class YmmpxPackageService
         if (root is null)
             throw new InvalidDataException("Failed to parse project JSON.");
 
-        // ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆå†… FilePath ã‚’å±•é–‹æ¸ˆã¿å®Ÿãƒ•ã‚¡ã‚¤ãƒ«ã¸å·®ã—æ›¿ãˆã‚‹ã€‚
+        // ƒvƒƒWƒFƒNƒg“à FilePath ‚ğ“WŠJÏ‚İÀƒtƒ@ƒCƒ‹‚Ö·‚µ‘Ö‚¦‚éB
         var replacedCount = YmmpxProjectJson.ReplaceFilePaths(root, linkMap);
 
         var writeOptions = new JsonSerializerOptions
@@ -223,7 +277,7 @@ public static class YmmpxPackageService
 
         File.WriteAllText(projectPath, root.ToJsonString(writeOptions));
 
-        // ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã§ã¯ã€Œã‚¢ãƒ¼ã‚«ã‚¤ãƒ–å.ymmpã€ã«å¯„ã›ã¦æ‰±ã„ã‚„ã™ãã™ã‚‹ã€‚
+        // ƒfƒtƒHƒ‹ƒg‚Å‚ÍuƒA[ƒJƒCƒu–¼.ymmpv‚ÉŠñ‚¹‚Äˆµ‚¢‚â‚·‚­‚·‚éB
         var ymmpxBaseName = Path.GetFileNameWithoutExtension(ymmpxPath);
         if (!string.IsNullOrWhiteSpace(ymmpxBaseName))
         {
@@ -243,17 +297,17 @@ public static class YmmpxPackageService
     }
 
     /// <summary>
-    /// ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸å†…ãƒªãƒ³ã‚¯å®šç¾©ã‚’èª­ã¿è¾¼ã¿ã€å…ƒãƒ‘ã‚¹ -> å±•é–‹å¾Œå®Ÿãƒ‘ã‚¹ã®å¯¾å¿œè¡¨ã‚’è¿”ã—ã¾ã™ã€‚
+    /// ƒpƒbƒP[ƒW“àƒŠƒ“ƒN’è‹`‚ğ“Ç‚İ‚İAŒ³ƒpƒX -> “WŠJŒãÀƒpƒX‚Ì‘Î‰•\‚ğ•Ô‚µ‚Ü‚·B
     /// </summary>
     /// <remarks>
-    /// èª­ã¿è¾¼ã¿é †ã¯ <c>links.json</c> -> <c>manifest.json</c> -> <c>links.txt</c> ã§ã™ã€‚
+    /// “Ç‚İ‚İ‡‚Í <c>links.json</c> -> <c>manifest.json</c> -> <c>links.txt</c> ‚Å‚·B
     /// </remarks>
     public static Dictionary<string, string> LoadLinkMap(string baseDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseDirectory);
         var linkMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        // ç¾è¡Œå½¢å¼: links.json
+        // Œ»sŒ`®: links.json
         var linksJsonPath = Path.Combine(baseDirectory, "links.json");
         if (File.Exists(linksJsonPath))
         {
@@ -275,11 +329,11 @@ public static class YmmpxPackageService
             }
             catch (JsonException)
             {
-                // links.json ãŒå£Šã‚Œã¦ã„ã‚‹å ´åˆã¯ links.txt ã«ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ã™ã‚‹ã€‚
+                // links.json ‚ª‰ó‚ê‚Ä‚¢‚éê‡‚Í links.txt ‚ÉƒtƒH[ƒ‹ƒoƒbƒN‚·‚éB
             }
         }
 
-        // æ—§äº’æ›å½¢å¼: manifest.json
+        // ‹ŒŒİŠ·Œ`®: manifest.json
         var manifestPath = Path.Combine(baseDirectory, "manifest.json");
         if (File.Exists(manifestPath))
         {
@@ -319,11 +373,11 @@ public static class YmmpxPackageService
             }
             catch (JsonException)
             {
-                // manifest.json ãŒå£Šã‚Œã¦ã„ã‚‹å ´åˆã¯ links.txt ã«ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ã™ã‚‹ã€‚
+                // manifest.json ‚ª‰ó‚ê‚Ä‚¢‚éê‡‚Í links.txt ‚ÉƒtƒH[ƒ‹ƒoƒbƒN‚·‚éB
             }
         }
 
-        // æœ€çµ‚ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯: CSV å½¢å¼ã® links.txt
+        // ÅIƒtƒH[ƒ‹ƒoƒbƒN: CSV Œ`®‚Ì links.txt
         var linksPath = Path.Combine(baseDirectory, "links.txt");
         if (File.Exists(linksPath))
         {
@@ -347,7 +401,7 @@ public static class YmmpxPackageService
     }
 
     /// <summary>
-    /// æ—¢å­˜ãƒ•ã‚©ãƒ«ãƒ€ã¨è¡çªã—ãªã„ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªåã‚’ç”Ÿæˆã—ã¾ã™ã€‚
+    /// Šù‘¶ƒtƒHƒ‹ƒ_‚ÆÕ“Ë‚µ‚È‚¢ƒfƒBƒŒƒNƒgƒŠ–¼‚ğ¶¬‚µ‚Ü‚·B
     /// </summary>
     public static string GetAvailableDirectoryPath(string desiredPath)
     {
@@ -365,7 +419,7 @@ public static class YmmpxPackageService
     }
 
     /// <summary>
-    /// æ—¢å­˜ãƒ•ã‚¡ã‚¤ãƒ«ã¨è¡çªã—ãªã„ãƒ•ã‚¡ã‚¤ãƒ«ãƒ‘ã‚¹ã‚’ç”Ÿæˆã—ã¾ã™ã€‚
+    /// Šù‘¶ƒtƒ@ƒCƒ‹‚ÆÕ“Ë‚µ‚È‚¢ƒtƒ@ƒCƒ‹ƒpƒX‚ğ¶¬‚µ‚Ü‚·B
     /// </summary>
     public static string GetAvailableFilePath(string desiredPath)
     {
@@ -389,7 +443,7 @@ public static class YmmpxPackageService
         return candidate;
     }
 
-    // ç›¸å¯¾/çµ¶å¯¾ã©ã¡ã‚‰ã§ã‚‚çµ¶å¯¾ãƒ‘ã‚¹ã¸å¤‰æ›ã™ã‚‹ã€‚
+    // ‘Š‘Î/â‘Î‚Ç‚¿‚ç‚Å‚àâ‘ÎƒpƒX‚Ö•ÏŠ·‚·‚éB
     private static string ResolvePath(string baseDirectory, string relativeOrAbsolutePath)
     {
         if (Path.IsPathRooted(relativeOrAbsolutePath))
@@ -402,18 +456,18 @@ public static class YmmpxPackageService
     {
         Directory.CreateDirectory(extractDirectory);
 
-        // Zip Slip å¯¾ç­–ã¨ã—ã¦å±•é–‹å…ˆãƒ™ãƒ¼ã‚¹ã® prefix ã‚’å›ºå®šã™ã‚‹ã€‚
+        // Zip Slip ‘Îô‚Æ‚µ‚Ä“WŠJæƒx[ƒX‚Ì prefix ‚ğŒÅ’è‚·‚éB
         var baseDirectory = EnsureTrailingDirectorySeparator(Path.GetFullPath(extractDirectory));
 
         using var archive = ZipFile.OpenRead(ymmpxPath);
         foreach (var entry in archive.Entries)
         {
-            // ã‚¨ãƒ³ãƒˆãƒªã®æœ€çµ‚å±•é–‹å…ˆã‚’è§£æ±ºã—ã€ãƒ™ãƒ¼ã‚¹é…ä¸‹ã‹æ¤œè¨¼ã™ã‚‹ã€‚
+            // ƒGƒ“ƒgƒŠ‚ÌÅI“WŠJæ‚ğ‰ğŒˆ‚µAƒx[ƒX”z‰º‚©ŒŸØ‚·‚éB
             var destinationPath = Path.GetFullPath(Path.Combine(extractDirectory, entry.FullName));
             if (!destinationPath.StartsWith(baseDirectory, GetPathComparison()))
                 throw new InvalidDataException($"Entry path escapes extraction directory: {entry.FullName}");
 
-            // Name ãŒç©ºãªã‚‰ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã‚¨ãƒ³ãƒˆãƒªã€‚
+            // Name ‚ª‹ó‚È‚çƒfƒBƒŒƒNƒgƒŠƒGƒ“ƒgƒŠB
             if (string.IsNullOrEmpty(entry.Name))
             {
                 Directory.CreateDirectory(destinationPath);
@@ -431,7 +485,7 @@ public static class YmmpxPackageService
     private static bool TryResolvePathWithinBaseDirectory(string baseDirectory, string relativePath, out string resolvedPath)
     {
         resolvedPath = string.Empty;
-        // ãƒãƒ‹ãƒ•ã‚§ã‚¹ãƒˆä¸Šã¯ç›¸å¯¾ãƒ‘ã‚¹ã®ã¿è¨±å¯ã—ã€çµ¶å¯¾ãƒ‘ã‚¹æ³¨å…¥ã‚’æ‹’å¦ã™ã‚‹ã€‚
+        // ƒ}ƒjƒtƒFƒXƒgã‚Í‘Š‘ÎƒpƒX‚Ì‚İ‹–‰Â‚µAâ‘ÎƒpƒX’“ü‚ğ‹‘”Û‚·‚éB
         if (Path.IsPathRooted(relativePath))
             return false;
 
@@ -444,7 +498,7 @@ public static class YmmpxPackageService
         return true;
     }
 
-    // æ–‡å­—åˆ—æ¯”è¼ƒæ™‚ã®èª¤ä¸€è‡´ã‚’é˜²ããŸã‚ã€æœ«å°¾åŒºåˆ‡ã‚Šã‚’å¿…ãšä»˜ä¸ã™ã‚‹ã€‚
+    // •¶š—ñ”äŠr‚ÌŒëˆê’v‚ğ–h‚®‚½‚ßA––”ö‹æØ‚è‚ğ•K‚¸•t—^‚·‚éB
     private static string EnsureTrailingDirectorySeparator(string path)
     {
         if (path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar))
@@ -452,7 +506,7 @@ public static class YmmpxPackageService
         return path + Path.DirectorySeparatorChar;
     }
 
-    // OS ã”ã¨ã®ãƒ‘ã‚¹æ¯”è¼ƒãƒ«ãƒ¼ãƒ«ã‚’çµ±ä¸€ã™ã‚‹ã€‚
+    // OS ‚²‚Æ‚ÌƒpƒX”äŠrƒ‹[ƒ‹‚ğ“ˆê‚·‚éB
     private static StringComparison GetPathComparison()
     {
         return OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -460,13 +514,13 @@ public static class YmmpxPackageService
 
     private static string NormalizePath(string baseDirectory, string path)
     {
-        // ç’°å¢ƒå¤‰æ•°ã¨å¼•ç”¨ç¬¦ã‚’å±•é–‹/é™¤å»ã—ã¦å…¥åŠ›ã‚†ã‚Œã‚’å¸åã™ã‚‹ã€‚
+        // ŠÂ‹«•Ï”‚Æˆø—p•„‚ğ“WŠJ/œ‹‚µ‚Ä“ü—Í‚ä‚ê‚ğ‹zû‚·‚éB
         path = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
-        // file:// URI ã¯ãƒ­ãƒ¼ã‚«ãƒ«ãƒ‘ã‚¹ã¸æˆ»ã™ã€‚
+        // file:// URI ‚Íƒ[ƒJƒ‹ƒpƒX‚Ö–ß‚·B
         if (Uri.TryCreate(path, UriKind.Absolute, out var uri) && uri.IsFile)
             return Path.GetFullPath(uri.LocalPath);
 
-        // ç›¸å¯¾ãƒ‘ã‚¹ã¯ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆåŸºæº–ã§è§£æ±ºã™ã‚‹ã€‚
+        // ‘Š‘ÎƒpƒX‚ÍƒvƒƒWƒFƒNƒgŠî€‚Å‰ğŒˆ‚·‚éB
         if (Path.IsPathRooted(path))
             return Path.GetFullPath(path);
 
@@ -475,7 +529,7 @@ public static class YmmpxPackageService
 
     private static string NormalizeProjectPath(string path)
     {
-        // ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆ JSON å†…ã§ã¯ OS å·®åˆ†ã‚’é¿ã‘ã‚‹ãŸã‚åŒºåˆ‡ã‚Šã‚’ '/' ã«æƒãˆã‚‹ã€‚
+        // ƒvƒƒWƒFƒNƒg JSON “à‚Å‚Í OS ·•ª‚ğ”ğ‚¯‚é‚½‚ß‹æØ‚è‚ğ '/' ‚É‘µ‚¦‚éB
         return path.Replace('\\', '/');
     }
 
@@ -493,5 +547,58 @@ public static class YmmpxPackageService
         }
 
         return candidate;
+    }
+    private static async Task CopyFileToEntryWithProgressAsync(
+        ZipArchive archive,
+        string sourcePath,
+        string entryName,
+        Action<int> onBytesWritten,
+        CancellationToken cancellationToken)
+    {
+        const int bufferSize = 81920;
+
+        var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+        await using var sourceStream = new FileStream(
+            sourcePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize,
+            useAsync: true);
+        await using var destinationStream = entry.Open();
+
+        var buffer = new byte[bufferSize];
+        while (true)
+        {
+            var read = await sourceStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+                break;
+
+            await destinationStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            onBytesWritten(read);
+        }
+    }
+
+    private sealed class ProgressReportGate
+    {
+        private const long ReportBytesThreshold = 1 * 1024 * 1024;
+        private static readonly TimeSpan ReportInterval = TimeSpan.FromMilliseconds(80);
+
+        private readonly Stopwatch stopwatch = Stopwatch.StartNew();
+        private long lastReportedBytes;
+        private TimeSpan lastReportedTime = TimeSpan.Zero;
+
+        public bool ShouldReport(long currentBytes)
+        {
+            var elapsed = stopwatch.Elapsed;
+            var bytesDelta = currentBytes - lastReportedBytes;
+            var timeDelta = elapsed - lastReportedTime;
+            if (bytesDelta < ReportBytesThreshold && timeDelta < ReportInterval)
+                return false;
+
+            lastReportedBytes = currentBytes;
+            lastReportedTime = elapsed;
+            return true;
+        }
     }
 }

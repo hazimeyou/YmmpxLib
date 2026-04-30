@@ -17,7 +17,21 @@ var extension = Path.GetExtension(inputPath);
 if (extension.Equals(".ymmp", StringComparison.OrdinalIgnoreCase))
 {
     var outputPath = Path.ChangeExtension(inputPath, ".ymmpx");
-    var result = await YmmpxPackageService.CreatePackageAsync(inputPath, outputPath);
+    var progress = new Progress<YmmpxPackagingProgress>(p =>
+    {
+        var percent = Math.Clamp(p.Percentage, 0, 100);
+        var line =
+            $"\r[{percent,6:0.00}%] " +
+            $"{FormatBytes(p.ProcessedBytes),10} / {FormatBytes(p.TotalBytes),10} " +
+            $"files {p.CompletedCount,3}/{p.TotalCount,3}  {p.Message}";
+        Console.Write(line);
+    });
+
+    var result = await YmmpxPackageService.CreatePackageAsync(
+        inputPath,
+        outputPath,
+        progress: progress);
+    Console.WriteLine();
     Console.WriteLine($"Packed: {result.OutputPath}");
     Console.WriteLine($"Resources: {result.ResourceCount}");
     return 0;
@@ -45,4 +59,21 @@ static void PrintUsage()
     Console.WriteLine("Usage: YMMPXCli <input.ymmp|input.ymmpx>");
     Console.WriteLine("  .ymmp  -> create .ymmpx package");
     Console.WriteLine("  .ymmpx -> extract package and restore absolute FilePath in project");
+}
+
+static string FormatBytes(long bytes)
+{
+    if (bytes < 0)
+        return "0 B";
+
+    string[] units = ["B", "KB", "MB", "GB", "TB"];
+    double size = bytes;
+    var unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.Length - 1)
+    {
+        size /= 1024;
+        unitIndex++;
+    }
+
+    return $"{size:0.##} {units[unitIndex]}";
 }
