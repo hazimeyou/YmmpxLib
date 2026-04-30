@@ -20,8 +20,10 @@ if (extension.Equals(".ymmp", StringComparison.OrdinalIgnoreCase))
     var progress = new Progress<YmmpxPackagingProgress>(p =>
     {
         var percent = Math.Clamp(p.Percentage, 0, 100);
+        var now = DateTime.Now.ToString("HH:mm:ss.fff");
         var line =
-            $"\r[{percent,6:0.00}%] " +
+            $"\r[{now}] [{percent,6:0.00}%] " +
+            $"{p.ProcessedBytes}/{p.TotalBytes} bytes " +
             $"{FormatBytes(p.ProcessedBytes),10} / {FormatBytes(p.TotalBytes),10} " +
             $"files {p.CompletedCount,3}/{p.TotalCount,3}  {p.Message}";
         Console.Write(line);

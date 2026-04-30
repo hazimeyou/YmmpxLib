@@ -16,6 +16,11 @@ public sealed record YmmpxPackagingProgress(int CompletedCount, int TotalCount, 
     public long TotalBytes { get; init; }
 
     /// <summary>
+    /// 処理完了状態です。TotalBytes が 0 のケースで 100% 判定に使います。
+    /// </summary>
+    public bool IsCompleted { get; init; }
+
+    /// <summary>
     /// バイト情報付きで進捗を初期化します。
     /// </summary>
     public YmmpxPackagingProgress(
@@ -38,7 +43,10 @@ public sealed record YmmpxPackagingProgress(int CompletedCount, int TotalCount, 
         get
         {
             if (TotalBytes > 0)
-                return (double)ProcessedBytes / TotalBytes * 100;
+                return Math.Clamp((double)ProcessedBytes / TotalBytes * 100, 0, 100);
+
+            if (IsCompleted)
+                return 100;
 
             return TotalCount <= 0 ? 0 : (double)CompletedCount / TotalCount * 100;
         }
