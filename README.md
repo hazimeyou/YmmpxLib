@@ -149,3 +149,52 @@ Console.WriteLine(unpack.ProjectFilePath);
 ## ライセンス
 
 本リポジトリのライセンスは [LICENSE](LICENSE) を参照してください。
+## 互換モード
+
+YmmpxLib は **単一の YmmpxLib.dll** で動作し、互換モードで挙動を切り替える設計です。
+複数の YmmpxLib.dll を同時配置して共存させる運用は推奨しません。
+
+- `YmmpxCompatibilityVersion`
+- `YmmpxOptions`
+- `YmmpxService.Create(options)`
+
+現在は `Latest` 実装を基準にし、`V0_1` / `V0_2` は `Latest` へフォールバックします。
+
+## YmmpxLibPlugin
+
+`YmmpxLibPlugin` は YMM4 向けの前提プラグインです。
+他の hazimeyou 製 YMM プラグインが共有する `YmmpxLib.dll` を提供します。
+
+- 表示名: `YmmpxLib Shared Library`
+- 説明: `Shared YmmpxLib runtime library for hazimeyou YMM plugins.`
+- 目的: YMM 側へ確実に読み込ませるための薄いエントリプラグイン
+
+運用方針:
+- 他プラグインは `YmmpxLib.dll` を同梱しない
+- 他プラグインはビルド時のみ参照し、配布時は `Private=false` で同梱しない
+- YmmpxLib は単一DLL + 互換モード方式で運用する
+
+## YMM4 ライブラリ取得
+
+YMM4 のビルド用 DLL はリポジトリへ同梱せず、CI またはローカルスクリプトで取得します。
+
+```powershell
+.\scripts\fetch-ymm4-libs.ps1
+dotnet build
+```
+
+## Release 成果物
+
+- `YmmpxLib-vX.Y.Z.zip`
+  - `YmmpxLib.dll`
+  - `YmmpxLib.deps.json`
+  - `README.md`
+  - `LICENSE.txt`
+
+- `YmmpxLibPlugin-vX.Y.Z.ymme`
+  - `YmmpxLibPlugin.dll`
+  - `YmmpxLibPlugin.deps.json` (存在する場合)
+  - `YmmpxLib.dll`
+  - `YmmpxLib.deps.json`
+  - `README.md`
+  - `LICENSE.txt`

@@ -1,4 +1,4 @@
-name: Build and Release
+﻿name: Build and Release
 
 on:
   push:
@@ -6,8 +6,10 @@ on:
       - "v*"
 
 env:
-  PROJECT_PATH: YMMPXLib/YmmpxLib.csproj
-  PUBLISH_DIR: publish
+  LIB_PROJECT_PATH: YMMPXLib/YmmpxLib.csproj
+  PLUGIN_PROJECT_PATH: YMMPXLibPlugin/YmmpxLibPlugin.csproj
+  PUBLISH_LIB_DIR: publish/lib
+  PUBLISH_PLUGIN_DIR: publish/plugin
   PACKAGE_DIR: package
 
 jobs:
@@ -31,43 +33,78 @@ jobs:
           $version = "${{ github.ref_name }}".TrimStart("v")
           echo "VERSION=$version" >> $env:GITHUB_ENV
 
-      - name: Build
-        run: dotnet build ${{ env.PROJECT_PATH }} -c Release -p:VersionPrefix=$VERSION
-
-      - name: Publish
-        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -p:VersionPrefix=$VERSION -o ${{ env.PUBLISH_DIR }}
-
-      - name: Prepare Release Package
+      - name: Fetch YMM4 Build Libraries
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path "${{ env.PUBLISH_DIR }}" | Out-Null
+          ./scripts/fetch-ymm4-libs.ps1 -OutputDir "libs/YMM4"
+
+      - name: Build YmmpxLib
+        run: dotnet build ${{ env.LIB_PROJECT_PATH }} -c Release -p:VersionPrefix=$VERSION
+
+      - name: Publish YmmpxLib
+        run: dotnet publish ${{ env.LIB_PROJECT_PATH }} -c Release -p:VersionPrefix=$VERSION -o ${{ env.PUBLISH_LIB_DIR }}
+
+      - name: Build YmmpxLibPlugin
+        run: dotnet build ${{ env.PLUGIN_PROJECT_PATH }} -c Release -p:VersionPrefix=$VERSION
+
+      - name: Publish YmmpxLibPlugin
+        run: dotnet publish ${{ env.PLUGIN_PROJECT_PATH }} -c Release -p:VersionPrefix=$VERSION -o ${{ env.PUBLISH_PLUGIN_DIR }}
+
+      - name: Prepare Release Packages
+        shell: pwsh
+        run: |
           New-Item -ItemType Directory -Force -Path "${{ env.PACKAGE_DIR }}" | Out-Null
 
-          Copy-Item -Path "README.md" -Destination "${{ env.PUBLISH_DIR }}\\README.md" -Force
-          Copy-Item -Path "LICENSE" -Destination "${{ env.PUBLISH_DIR }}\\LICENSE" -Force
+          Copy-Item -Path "LICENSE" -Destination "${{ env.PUBLISH_LIB_DIR }}\LICENSE.txt" -Force
+          Copy-Item -Path "LICENSE" -Destination "${{ env.PUBLISH_PLUGIN_DIR }}\LICENSE.txt" -Force
+          Copy-Item -Path "README.md" -Destination "${{ env.PUBLISH_LIB_DIR }}\README.md" -Force
+          Copy-Item -Path "README.md" -Destination "${{ env.PUBLISH_PLUGIN_DIR }}\README.md" -Force
 
-          if (Test-Path "${{ env.PUBLISH_DIR }}\\YmmpxLib.pdb") {
-            Remove-Item "${{ env.PUBLISH_DIR }}\\YmmpxLib.pdb" -Force
-          }
+          Copy-Item -Path "${{ env.PUBLISH_LIB_DIR }}\YmmpxLib.dll" -Destination "${{ env.PUBLISH_PLUGIN_DIR }}\YmmpxLib.dll" -Force
+          Copy-Item -Path "${{ env.PUBLISH_LIB_DIR }}\YmmpxLib.deps.json" -Destination "${{ env.PUBLISH_PLUGIN_DIR }}\YmmpxLib.deps.json" -Force
 
-          $zipName = "YmmpxLib-${{ github.ref_name }}.zip"
-          $zipPath = Join-Path "${{ env.PACKAGE_DIR }}" $zipName
-          if (Test-Path $zipPath) {
-            Remove-Item $zipPath -Force
-          }
+          Get-ChildItem -Path "${{ env.PUBLISH_LIB_DIR }}" -Filter "*.pdb" -File | Remove-Item -Force
+          Get-ChildItem -Path "${{ env.PUBLISH_PLUGIN_DIR }}" -Filter "*.pdb" -File | Remove-Item -Force
+
+          $libZip = "${{ env.PACKAGE_DIR }}\YmmpxLib-${{ github.ref_name }}.zip"
+          if (Test-Path $libZip) { Remove-Item $libZip -Force }
 
           Compress-Archive -Path `
-            "${{ env.PUBLISH_DIR }}\\YmmpxLib.dll", `
-            "${{ env.PUBLISH_DIR }}\\YmmpxLib.deps.json", `
-            "${{ env.PUBLISH_DIR }}\\README.md", `
-            "${{ env.PUBLISH_DIR }}\\LICENSE" `
-            -DestinationPath $zipPath
+            "${{ env.PUBLISH_LIB_DIR }}\YmmpxLib.dll", `
+            "${{ env.PUBLISH_LIB_DIR }}\YmmpxLib.deps.json", `
+            "${{ env.PUBLISH_LIB_DIR }}\README.md", `
+            "${{ env.PUBLISH_LIB_DIR }}\LICENSE.txt" `
+            -DestinationPath $libZip
+
+          $pluginArchiveRoot = Join-Path $env:RUNNER_TEMP "YmmpxLibPluginPackage"
+          if (Test-Path $pluginArchiveRoot) { Remove-Item $pluginArchiveRoot -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $pluginArchiveRoot | Out-Null
+
+          Copy-Item "${{ env.PUBLISH_PLUGIN_DIR }}\YmmpxLibPlugin.dll" "$pluginArchiveRoot\YmmpxLibPlugin.dll" -Force
+          if (Test-Path "${{ env.PUBLISH_PLUGIN_DIR }}\YmmpxLibPlugin.deps.json") {
+            Copy-Item "${{ env.PUBLISH_PLUGIN_DIR }}\YmmpxLibPlugin.deps.json" "$pluginArchiveRoot\YmmpxLibPlugin.deps.json" -Force
+          }
+          Copy-Item "${{ env.PUBLISH_PLUGIN_DIR }}\YmmpxLib.dll" "$pluginArchiveRoot\YmmpxLib.dll" -Force
+          Copy-Item "${{ env.PUBLISH_PLUGIN_DIR }}\YmmpxLib.deps.json" "$pluginArchiveRoot\YmmpxLib.deps.json" -Force
+          Copy-Item "${{ env.PUBLISH_PLUGIN_DIR }}\README.md" "$pluginArchiveRoot\README.md" -Force
+          Copy-Item "${{ env.PUBLISH_PLUGIN_DIR }}\LICENSE.txt" "$pluginArchiveRoot\LICENSE.txt" -Force
+
+          $pluginZipTemp = "${{ env.PACKAGE_DIR }}\YmmpxLibPlugin-${{ github.ref_name }}.zip"
+          $pluginYmme = "${{ env.PACKAGE_DIR }}\YmmpxLibPlugin-${{ github.ref_name }}.ymme"
+
+          if (Test-Path $pluginZipTemp) { Remove-Item $pluginZipTemp -Force }
+          if (Test-Path $pluginYmme) { Remove-Item $pluginYmme -Force }
+
+          Compress-Archive -Path "$pluginArchiveRoot\*" -DestinationPath $pluginZipTemp
+          Move-Item -Path $pluginZipTemp -Destination $pluginYmme
 
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref_name }}
-          artifacts: package/YmmpxLib-${{ github.ref_name }}.zip
+          artifacts: |
+            package/YmmpxLib-${{ github.ref_name }}.zip
+            package/YmmpxLibPlugin-${{ github.ref_name }}.ymme
           draft: true
           prerelease: true

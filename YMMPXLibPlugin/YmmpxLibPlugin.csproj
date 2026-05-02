@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\YMMPXLib\YmmpxLib.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('..\libs\YMM4\YukkuriMovieMaker.Plugin.dll')">
+    <Reference Include="YukkuriMovieMaker.Plugin">
+      <HintPath>..\libs\YMM4\YukkuriMovieMaker.Plugin.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('..\libs\YMM4\YukkuriMovieMaker.dll')">
+    <Reference Include="YukkuriMovieMaker">
+      <HintPath>..\libs\YMM4\YukkuriMovieMaker.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('..\libs\YMM4\YukkuriMovieMaker.Controls.dll')">
+    <Reference Include="YukkuriMovieMaker.Controls">
+      <HintPath>..\libs\YMM4\YukkuriMovieMaker.Controls.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
