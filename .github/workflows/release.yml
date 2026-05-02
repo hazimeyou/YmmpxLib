@@ -105,6 +105,6 @@ jobs:
           tag: ${{ github.ref_name }}
           artifacts: |
             package/YmmpxLib-${{ github.ref_name }}.zip
-            package/YmmpxLibPlugin-${{ github.ref_name }}.ymme
+            package/YmmpxLibPlugin.ymme
           draft: true
-          prerelease: true
+          prerelease: false
