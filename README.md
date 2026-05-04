@@ -146,9 +146,7 @@ Console.WriteLine(unpack.ProjectFilePath);
 - 実行例: dotnet run --project .\\YMMPXCli\\YMMPXCli.csproj -- "C:\\path\\to\\project.ymmp"
 - 実行例: dotnet run --project .\\YMMPXCli\\YMMPXCli.csproj -- "C:\\path\\to\\package.ymmpx"
 
-## ライセンス
 
-本リポジトリのライセンスは [LICENSE](LICENSE) を参照してください。
 ## 互換モード
 
 YmmpxLib は **単一の YmmpxLib.dll** で動作し、互換モードで挙動を切り替える設計です。
@@ -198,3 +196,7 @@ dotnet build
   - `YmmpxLib.deps.json`
   - `README.md`
   - `LICENSE.txt`
+
+## ライセンス
+
+本リポジトリのライセンスは [LICENSE](LICENSE) を参照してください。
