@@ -1,15 +1,15 @@
 # YmmpxLib
 
-`YmmpxLib` ‚Í `.ymmpx` ‚Ìì¬E“WŠJ‚ÆAYMM ƒvƒƒWƒFƒNƒg JSON “à‚Ì `FilePath` ‰ğŒˆ‚ğ’ñ‹Ÿ‚·‚éƒ‰ƒCƒuƒ‰ƒŠ‚Å‚·B
+`YmmpxLib` ã¯ `.ymmpx` ã®ä½œæˆãƒ»å±•é–‹ã¨ã€YMM ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆ JSON å†…ã® `FilePath` è§£æ±ºã‚’æä¾›ã™ã‚‹ãƒ©ã‚¤ãƒ–ãƒ©ãƒªã§ã™ã€‚
 
-## ‘ÎÛ‹@”\
+## å¯¾è±¡æ©Ÿèƒ½
 
-- `.ymmp` + ‘fŞƒtƒ@ƒCƒ‹‚ğ `.ymmpx` ‚ÉƒpƒbƒP[ƒWƒ“ƒOi“¯« `FilePath` ‚Íƒtƒ@ƒCƒ‹–¼‰»j
-- `.ymmpx` ‚ğ“WŠJ‚µA`FilePath` ‚ğ“WŠJæ‚ÌÀƒtƒ@ƒCƒ‹‚Ö•œŒ³
-- ƒvƒƒWƒFƒNƒg JSON ‚Ì `FilePath` —ñ‹“/’uŠ·
-- ”CˆÓ‚Å UI İ’è (`LayoutXml`, `ToolStates`) ‚ğœŠO‚µ‚ÄƒpƒbƒP[ƒW‰»
+- `.ymmp` + ç´ æãƒ•ã‚¡ã‚¤ãƒ«ã‚’ `.ymmpx` ã«ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ãƒ³ã‚°ï¼ˆåŒæ¢±æ™‚ `FilePath` ã¯ãƒ•ã‚¡ã‚¤ãƒ«ååŒ–ï¼‰
+- `.ymmpx` ã‚’å±•é–‹ã—ã€`FilePath` ã‚’å±•é–‹å…ˆã®å®Ÿãƒ•ã‚¡ã‚¤ãƒ«ã¸å¾©å…ƒ
+- ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆ JSON ã® `FilePath` åˆ—æŒ™/ç½®æ›
+- ä»»æ„ã§ UI è¨­å®š (`LayoutXml`, `ToolStates`) ã‚’é™¤å¤–ã—ã¦ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸åŒ–
 
-## å—v API
+## ä¸»è¦ API
 
 ### YmmpxPackageService.CreatePackageAsync
 
@@ -23,19 +23,19 @@ Task<YmmpxPackagingResult> CreatePackageAsync(
     CancellationToken cancellationToken = default)
 ```
 
-- `projectFilePath`: “ü—Í `.ymmp` ƒpƒX
-- `outputPath`: o—Í `.ymmpx` ƒpƒX
-- `excludedFiles`: ƒpƒbƒP[ƒW‚©‚çœŠO‚·‚é‘fŞƒpƒXW‡iâ‘Î/‘Š‘ÎƒpƒXA`file://` URIAŠÂ‹«•Ï”“WŠJ‚É‘Î‰j
-- `options`: ƒpƒbƒP[ƒWƒIƒvƒVƒ‡ƒ“
+- `projectFilePath`: å…¥åŠ› `.ymmp` ãƒ‘ã‚¹
+- `outputPath`: å‡ºåŠ› `.ymmpx` ãƒ‘ã‚¹
+- `excludedFiles`: ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ã‹ã‚‰é™¤å¤–ã™ã‚‹ç´ æãƒ‘ã‚¹é›†åˆï¼ˆçµ¶å¯¾/ç›¸å¯¾ãƒ‘ã‚¹ã€`file://` URIã€ç’°å¢ƒå¤‰æ•°å±•é–‹ã«å¯¾å¿œï¼‰
+- `options`: ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ã‚ªãƒ—ã‚·ãƒ§ãƒ³
   - `IncludeProjectUiSettings` (`bool`, default: `true`)
-- `progress`: i’»’Ê’m
+- `progress`: é€²æ—é€šçŸ¥
   - `CompletedCount`, `TotalCount`, `Message`, `Percentage`
 
-–ß‚è’l `YmmpxPackagingResult`:
+æˆ»ã‚Šå€¤ `YmmpxPackagingResult`:
 
-- `OutputPath`: ì¬‚µ‚½ `.ymmpx` ƒpƒX
-- `ResourceCount`: “¯«‚µ‚½‘fŞ”
-- `FileMap`: `•Û‘¶ƒtƒ@ƒCƒ‹–¼ -> ƒpƒbƒP[ƒW“àƒpƒX(resources/...)`
+- `OutputPath`: ä½œæˆã—ãŸ `.ymmpx` ãƒ‘ã‚¹
+- `ResourceCount`: åŒæ¢±ã—ãŸç´ ææ•°
+- `FileMap`: `ä¿å­˜ãƒ•ã‚¡ã‚¤ãƒ«å -> ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸å†…ãƒ‘ã‚¹(resources/...)`
 
 ### YmmpxPackageService.ExtractAndRestoreProject
 
@@ -45,16 +45,16 @@ YmmpxUnpackResult ExtractAndRestoreProject(
     string extractDirectory)
 ```
 
-- `.ymmpx` ‚ğ `extractDirectory` ‚Ö“WŠJ
-- `links.json` / `links.txt` ‚ğ“Ç‚İ‚İ
-- `.ymmp` “à `FilePath` ‚ğ“WŠJæ‚Ì‘fŞƒpƒX‚É’uŠ·
+- `.ymmpx` ã‚’ `extractDirectory` ã¸å±•é–‹
+- `links.json` / `links.txt` ã‚’èª­ã¿è¾¼ã¿
+- `.ymmp` å†… `FilePath` ã‚’å±•é–‹å…ˆã®ç´ æãƒ‘ã‚¹ã«ç½®æ›
 
-–ß‚è’l `YmmpxUnpackResult`:
+æˆ»ã‚Šå€¤ `YmmpxUnpackResult`:
 
-- `ExtractDirectory`: “WŠJæ
-- `ProjectFilePath`: •œŒ³Œã `.ymmp` ‚Ìƒtƒ‹ƒpƒX
-- `ReplacedPathCount`: ’uŠ·Œ”
-- `LinkMap`: `•Û‘¶ƒtƒ@ƒCƒ‹–¼ -> “WŠJæ‘fŞƒpƒX`
+- `ExtractDirectory`: å±•é–‹å…ˆ
+- `ProjectFilePath`: å¾©å…ƒå¾Œ `.ymmp` ã®ãƒ•ãƒ«ãƒ‘ã‚¹
+- `ReplacedPathCount`: ç½®æ›ä»¶æ•°
+- `LinkMap`: `ä¿å­˜ãƒ•ã‚¡ã‚¤ãƒ«å -> å±•é–‹å…ˆç´ æãƒ‘ã‚¹`
 
 ### YmmpxProjectJson
 
@@ -64,11 +64,11 @@ int ReplaceFilePaths(JsonNode node, IReadOnlyDictionary<string, string> linkMap)
 bool RemoveUiSettings(JsonNode node)
 ```
 
-- `FindFilePaths`: JSON ‚©‚ç `FilePath` ‚ğÄ‹A—ñ‹“
-- `ReplaceFilePaths`: `linkMap` ‚ğg‚Á‚Ä `FilePath` ‚ğ’uŠ·
-- `RemoveUiSettings`: ƒ‹[ƒg‚Ì `LayoutXml`, `ToolStates` ‚ğíœ
+- `FindFilePaths`: JSON ã‹ã‚‰ `FilePath` ã‚’å†å¸°åˆ—æŒ™
+- `ReplaceFilePaths`: `linkMap` ã‚’ä½¿ã£ã¦ `FilePath` ã‚’ç½®æ›
+- `RemoveUiSettings`: ãƒ«ãƒ¼ãƒˆã® `LayoutXml`, `ToolStates` ã‚’å‰Šé™¤
 
-### •â• API
+### è£œåŠ© API
 
 ```csharp
 Dictionary<string, string> LoadLinkMap(string baseDirectory)
@@ -76,13 +76,13 @@ string GetAvailableDirectoryPath(string desiredPath)
 string GetAvailableFilePath(string desiredPath)
 ```
 
-- `LoadLinkMap`: `links.json` —DæAŸ‚É `manifest.json`AÅŒã‚É `links.txt` ‚ğŒİŠ·“Ç‚İ‚İ
-- `GetAvailableDirectoryPath`: Šù‘¶‚É `_1`, `_2`... ‚ğ•t‚¯‚Ä‹ó‚«ƒpƒX•Ô‹p
-- `GetAvailableFilePath`: Šù‘¶‚É `_1`, `_2`... ‚ğ•t‚¯‚Ä‹ó‚«ƒtƒ@ƒCƒ‹–¼•Ô‹p
+- `LoadLinkMap`: `links.json` å„ªå…ˆã€æ¬¡ã« `manifest.json`ã€æœ€å¾Œã« `links.txt` ã‚’äº’æ›èª­ã¿è¾¼ã¿
+- `GetAvailableDirectoryPath`: æ—¢å­˜æ™‚ã« `_1`, `_2`... ã‚’ä»˜ã‘ã¦ç©ºããƒ‘ã‚¹è¿”å´
+- `GetAvailableFilePath`: æ—¢å­˜æ™‚ã« `_1`, `_2`... ã‚’ä»˜ã‘ã¦ç©ºããƒ•ã‚¡ã‚¤ãƒ«åè¿”å´
 
-## g—p—á
+## ä½¿ç”¨ä¾‹
 
-### 1) Šî–{ƒpƒbƒP[ƒWƒ“ƒO
+### 1) åŸºæœ¬ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ãƒ³ã‚°
 
 ```csharp
 using YmmpxLib;
@@ -94,14 +94,14 @@ var result = await YmmpxPackageService.CreatePackageAsync(
 Console.WriteLine(result.OutputPath);
 ```
 
-### 2) œŠOƒtƒ@ƒCƒ‹ + UI İ’èœŠO‚ÅƒpƒbƒP[ƒWƒ“ƒO
+### 2) é™¤å¤–ãƒ•ã‚¡ã‚¤ãƒ« + UI è¨­å®šé™¤å¤–ã§ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ãƒ³ã‚°
 
 ```csharp
 using YmmpxLib;
 
 var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 {
-    @"C:\work\‘fŞ\temp.wav"
+    @"C:\work\ç´ æ\temp.wav"
 };
 
 var result = await YmmpxPackageService.CreatePackageAsync(
@@ -114,7 +114,7 @@ var result = await YmmpxPackageService.CreatePackageAsync(
     });
 ```
 
-### 3) “WŠJ‚Æ `FilePath` •œŒ³
+### 3) å±•é–‹ã¨ `FilePath` å¾©å…ƒ
 
 ```csharp
 using YmmpxLib;
@@ -126,64 +126,64 @@ var unpack = YmmpxPackageService.ExtractAndRestoreProject(
 Console.WriteLine(unpack.ProjectFilePath);
 ```
 
-## ”õl
+## å‚™è€ƒ
 
-- “WŠJ‚Í `links.json` ‚ğ—Dæ‚µAŸ‚É `manifest.json`AÅŒã‚É `links.txt`iŒã•ûŒİŠ·j‚ğQÆ‚µ‚Ü‚·B
-- ƒpƒbƒP[ƒW‚É‚Í `_ymmpx_project_path.txt` ‚ğŠÜ‚ßAŒ³‚ÌƒvƒƒWƒFƒNƒgƒtƒ@ƒCƒ‹–¼‚ğ•Û‚µ‚Ü‚·B
-- ”z•z‚Í GitHub Releases ‚Ì ZIPi`YmmpxLib-v*.zip`j‚ğ—˜—p‚µ‚Ä‚­‚¾‚³‚¢B
+- å±•é–‹æ™‚ã¯ `links.json` ã‚’å„ªå…ˆã—ã€æ¬¡ã« `manifest.json`ã€æœ€å¾Œã« `links.txt`ï¼ˆå¾Œæ–¹äº’æ›ï¼‰ã‚’å‚ç…§ã—ã¾ã™ã€‚
+- ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸ã«ã¯ `_ymmpx_project_path.txt` ã‚’å«ã‚ã€å…ƒã®ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆãƒ•ã‚¡ã‚¤ãƒ«åã‚’ä¿æŒã—ã¾ã™ã€‚
+- é…å¸ƒã¯ GitHub Releases ã® ZIPï¼ˆ`YmmpxLib-v*.zip`ï¼‰ã‚’åˆ©ç”¨ã—ã¦ãã ã•ã„ã€‚
 
-## ‘Î‰Šg’£q
+## å¯¾å¿œæ‹¡å¼µå­
 
-- .ymmp: ƒpƒbƒP[ƒW“ü—Íi“¯«Œ³j
-- .ymmpx: ƒpƒbƒP[ƒWo—Í / “WŠJ“ü—Í
+- .ymmp: ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸å…¥åŠ›ï¼ˆåŒæ¢±å…ƒï¼‰
+- .ymmpx: ãƒ‘ãƒƒã‚±ãƒ¼ã‚¸å‡ºåŠ› / å±•é–‹å…¥åŠ›
 
 ## CLI
 
-ƒTƒ“ƒvƒ‹‚Æ‚µ‚Ä YMMPXCli ‚ğ—˜—p‚Å‚«‚Ü‚·B
+ã‚µãƒ³ãƒ—ãƒ«ã¨ã—ã¦ YMMPXCli ã‚’åˆ©ç”¨ã§ãã¾ã™ã€‚
 
-- ƒvƒƒWƒFƒNƒg: [YMMPXCli/YMMPXCli.csproj](YMMPXCli/YMMPXCli.csproj)
-- ƒ‰ƒCƒuƒ‰ƒŠ: [YMMPXLib/YmmpxLib.csproj](YMMPXLib/YmmpxLib.csproj)
-- Às—á: dotnet run --project .\\YMMPXCli\\YMMPXCli.csproj -- "C:\\path\\to\\project.ymmp"
-- Às—á: dotnet run --project .\\YMMPXCli\\YMMPXCli.csproj -- "C:\\path\\to\\package.ymmpx"
+- ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆ: [YMMPXCli/YMMPXCli.csproj](YMMPXCli/YMMPXCli.csproj)
+- ãƒ©ã‚¤ãƒ–ãƒ©ãƒª: [YMMPXLib/YmmpxLib.csproj](YMMPXLib/YmmpxLib.csproj)
+- å®Ÿè¡Œä¾‹: dotnet run --project .\\YMMPXCli\\YMMPXCli.csproj -- "C:\\path\\to\\project.ymmp"
+- å®Ÿè¡Œä¾‹: dotnet run --project .\\YMMPXCli\\YMMPXCli.csproj -- "C:\\path\\to\\package.ymmpx"
 
-## ƒ‰ƒCƒZƒ“ƒX
+## ãƒ©ã‚¤ã‚»ãƒ³ã‚¹
 
-–{ƒŠƒ|ƒWƒgƒŠ‚Ìƒ‰ƒCƒZƒ“ƒX‚Í [LICENSE](LICENSE) ‚ğQÆ‚µ‚Ä‚­‚¾‚³‚¢B
-## ŒİŠ·ƒ‚[ƒh
+æœ¬ãƒªãƒã‚¸ãƒˆãƒªã®ãƒ©ã‚¤ã‚»ãƒ³ã‚¹ã¯ [LICENSE](LICENSE) ã‚’å‚ç…§ã—ã¦ãã ã•ã„ã€‚
+## äº’æ›ãƒ¢ãƒ¼ãƒ‰
 
-YmmpxLib ‚Í **’Pˆê‚Ì YmmpxLib.dll** ‚Å“®ì‚µAŒİŠ·ƒ‚[ƒh‚Å‹““®‚ğØ‚è‘Ö‚¦‚éİŒv‚Å‚·B
-•¡”‚Ì YmmpxLib.dll ‚ğ“¯”z’u‚µ‚Ä‹¤‘¶‚³‚¹‚é‰^—p‚Í„§‚µ‚Ü‚¹‚ñB
+YmmpxLib ã¯ **å˜ä¸€ã® YmmpxLib.dll** ã§å‹•ä½œã—ã€äº’æ›ãƒ¢ãƒ¼ãƒ‰ã§æŒ™å‹•ã‚’åˆ‡ã‚Šæ›¿ãˆã‚‹è¨­è¨ˆã§ã™ã€‚
+è¤‡æ•°ã® YmmpxLib.dll ã‚’åŒæ™‚é…ç½®ã—ã¦å…±å­˜ã•ã›ã‚‹é‹ç”¨ã¯æ¨å¥¨ã—ã¾ã›ã‚“ã€‚
 
 - `YmmpxCompatibilityVersion`
 - `YmmpxOptions`
 - `YmmpxService.Create(options)`
 
-Œ»İ‚Í `Latest` À‘•‚ğŠî€‚É‚µA`V0_1` / `V0_2` ‚Í `Latest` ‚ÖƒtƒH[ƒ‹ƒoƒbƒN‚µ‚Ü‚·B
+ç¾åœ¨ã¯ `Latest` å®Ÿè£…ã‚’åŸºæº–ã«ã—ã€`V0_1` / `V0_2` ã¯ `Latest` ã¸ãƒ•ã‚©ãƒ¼ãƒ«ãƒãƒƒã‚¯ã—ã¾ã™ã€‚
 
 ## YmmpxLibPlugin
 
-`YmmpxLibPlugin` ‚Í YMM4 Œü‚¯‚Ì‘O’ñƒvƒ‰ƒOƒCƒ“‚Å‚·B
-‘¼‚Ì hazimeyou » YMM ƒvƒ‰ƒOƒCƒ“‚ª‹¤—L‚·‚é `YmmpxLib.dll` ‚ğ’ñ‹Ÿ‚µ‚Ü‚·B
+`YmmpxLibPlugin` ã¯ YMM4 å‘ã‘ã®å‰æãƒ—ãƒ©ã‚°ã‚¤ãƒ³ã§ã™ã€‚
+ä»–ã® YMMPX ç³» YMMPåŒæ¢± ãƒ—ãƒ©ã‚°ã‚¤ãƒ³ãŒå…±æœ‰ã™ã‚‹ `YmmpxLib.dll` ã‚’æä¾›ã—ã¾ã™ã€‚
 
-- •\¦–¼: `YmmpxLib Shared Library`
-- à–¾: `Shared YmmpxLib runtime library for hazimeyou YMM plugins.`
-- –Ú“I: YMM ‘¤‚ÖŠmÀ‚É“Ç‚İ‚Ü‚¹‚é‚½‚ß‚Ì”–‚¢ƒGƒ“ƒgƒŠƒvƒ‰ƒOƒCƒ“
+- è¡¨ç¤ºå: `YmmpxLib Shared Library`
+- èª¬æ˜: `Shared YmmpxLib runtime library for hazimeyou YMM plugins.`
+- ç›®çš„: YMM å´ã¸ç¢ºå®Ÿã«èª­ã¿è¾¼ã¾ã›ã‚‹ãŸã‚ã®è–„ã„ã‚¨ãƒ³ãƒˆãƒªãƒ—ãƒ©ã‚°ã‚¤ãƒ³
 
-‰^—p•ûj:
-- ‘¼ƒvƒ‰ƒOƒCƒ“‚Í `YmmpxLib.dll` ‚ğ“¯«‚µ‚È‚¢
-- ‘¼ƒvƒ‰ƒOƒCƒ“‚Íƒrƒ‹ƒh‚Ì‚İQÆ‚µA”z•z‚Í `Private=false` ‚Å“¯«‚µ‚È‚¢
-- YmmpxLib ‚Í’PˆêDLL + ŒİŠ·ƒ‚[ƒh•û®‚Å‰^—p‚·‚é
+é‹ç”¨æ–¹é‡:
+- ä»–ãƒ—ãƒ©ã‚°ã‚¤ãƒ³ã¯ `YmmpxLib.dll` ã‚’åŒæ¢±ã—ãªã„
+- ä»–ãƒ—ãƒ©ã‚°ã‚¤ãƒ³ã¯ãƒ“ãƒ«ãƒ‰æ™‚ã®ã¿å‚ç…§ã—ã€é…å¸ƒæ™‚ã¯ `Private=false` ã§åŒæ¢±ã—ãªã„
+- YmmpxLib ã¯å˜ä¸€DLL + äº’æ›ãƒ¢ãƒ¼ãƒ‰æ–¹å¼ã§é‹ç”¨ã™ã‚‹
 
-## YMM4 ƒ‰ƒCƒuƒ‰ƒŠæ“¾
+## YMM4 ãƒ©ã‚¤ãƒ–ãƒ©ãƒªå–å¾—
 
-YMM4 ‚Ìƒrƒ‹ƒh—p DLL ‚ÍƒŠƒ|ƒWƒgƒŠ‚Ö“¯«‚¹‚¸ACI ‚Ü‚½‚Íƒ[ƒJƒ‹ƒXƒNƒŠƒvƒg‚Åæ“¾‚µ‚Ü‚·B
+YMM4 ã®ãƒ“ãƒ«ãƒ‰ç”¨ DLL ã¯ãƒªãƒã‚¸ãƒˆãƒªã¸åŒæ¢±ã›ãšã€CI ã¾ãŸã¯ãƒ­ãƒ¼ã‚«ãƒ«ã‚¹ã‚¯ãƒªãƒ—ãƒˆã§å–å¾—ã—ã¾ã™ã€‚
 
 ```powershell
 .\scripts\fetch-ymm4-libs.ps1
 dotnet build
 ```
 
-## Release ¬‰Ê•¨
+## Release æˆæœç‰©
 
 - `YmmpxLib-vX.Y.Z.zip`
   - `YmmpxLib.dll`
@@ -193,7 +193,7 @@ dotnet build
 
 - `YmmpxLibPlugin-vX.Y.Z.ymme`
   - `YmmpxLibPlugin.dll`
-  - `YmmpxLibPlugin.deps.json` (‘¶İ‚·‚éê‡)
+  - `YmmpxLibPlugin.deps.json` (å­˜åœ¨ã™ã‚‹å ´åˆ)
   - `YmmpxLib.dll`
   - `YmmpxLib.deps.json`
   - `README.md`
