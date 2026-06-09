@@ -1,7 +1,15 @@
-﻿namespace YmmpxLib;
+namespace YmmpxLib;
 
+/// <summary>
+/// Ymmpx の公開サービスを生成します。
+/// </summary>
 public static class YmmpxService
 {
+    /// <summary>
+    /// 指定オプションに応じた <see cref="IYmmpxService"/> 実装を返します。
+    /// </summary>
+    /// <param name="options">サービス生成時のオプション。</param>
+    /// <returns>利用可能なサービス実装。</returns>
     public static IYmmpxService Create(YmmpxOptions? options = null)
     {
         options ??= new YmmpxOptions();
