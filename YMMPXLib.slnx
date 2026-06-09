@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="YmmpxLib/YmmpxLib.csproj" />
+  <Project Path="YMMPXLib.Tests/YMMPXLib.Tests.csproj" />
   <Project Path="YMMPXLibPlugin/YmmpxLibPlugin.csproj" />
   <Project Path="YMMPXCli/YMMPXCli.csproj" />
 </Solution>

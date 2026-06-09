@@ -1,9 +1,24 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>YmmpxLib</AssemblyName>
+    <RootNamespace>YmmpxLib</RootNamespace>
+    <PackageId>YmmpxLib</PackageId>
+    <Authors>hazimeyou</Authors>
+    <Description>Library for creating and extracting YMMPX packages.</Description>
+    <RepositoryUrl>https://github.com/hazimeyou/YmmpxLib</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/hazimeyou/YmmpxLib</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <Version Condition="'$(Version)'==''">0.0.0</Version>
+  </PropertyGroup>
 
-	<PropertyGroup>
-		<TargetFramework>net10.0</TargetFramework>
-		<ImplicitUsings>enable</ImplicitUsings>
-		<Nullable>enable</Nullable>
-		<Version Condition="'$(Version)'==''">0.0.0</Version>
-	</PropertyGroup>
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
 </Project>

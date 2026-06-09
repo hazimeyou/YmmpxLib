@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
 
@@ -90,7 +90,7 @@ jobs:
           Copy-Item "${{ env.PUBLISH_PLUGIN_DIR }}\LICENSE.txt" "$pluginArchiveRoot\LICENSE.txt" -Force
 
           $pluginZipTemp = "${{ env.PACKAGE_DIR }}\YmmpxLibPlugin-${{ github.ref_name }}.zip"
-          $pluginYmme = "${{ env.PACKAGE_DIR }}\YmmpxLibPlugin.ymme"
+          $pluginYmme = "${{ env.PACKAGE_DIR }}\YmmpxLibPlugin-${{ github.ref_name }}.ymme"
 
           if (Test-Path $pluginZipTemp) { Remove-Item $pluginZipTemp -Force }
           if (Test-Path $pluginYmme) { Remove-Item $pluginYmme -Force }
@@ -105,6 +105,6 @@ jobs:
           tag: ${{ github.ref_name }}
           artifacts: |
             package/YmmpxLib-${{ github.ref_name }}.zip
-            package/YmmpxLibPlugin.ymme
+            package/YmmpxLibPlugin-${{ github.ref_name }}.ymme
           draft: true
-          prerelease: true
+          prerelease: false

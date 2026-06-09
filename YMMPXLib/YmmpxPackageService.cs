@@ -340,7 +340,9 @@ public static class YmmpxPackageService
                             continue;
                         linkMap[NormalizeProjectPath(item.Key)] = resolvedPath;
                     }
-                    return linkMap;
+
+                    if (linkMap.Count > 0)
+                        return linkMap;
                 }
             }
             catch (JsonException)
@@ -399,17 +401,8 @@ public static class YmmpxPackageService
         {
             foreach (var line in File.ReadAllLines(linksPath))
             {
-                var parts = line.Split(',', 2);
-                if (parts.Length == 2)
-                {
-                    var source = parts[0].Trim();
-                    var packagedPath = parts[1].Trim();
-                    if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(packagedPath))
-                        continue;
-                    if (!TryResolvePathWithinBaseDirectory(baseDirectory, packagedPath, out var resolvedPath))
-                        continue;
+                if (TryParseLegacyLinksLine(baseDirectory, line, out var source, out var resolvedPath))
                     linkMap[NormalizeProjectPath(source)] = resolvedPath;
-                }
             }
         }
 
@@ -515,6 +508,50 @@ public static class YmmpxPackageService
     }
 
     // 文字列比較時の誤一致を防ぐため、末尾区切りを必ず付与する。
+    private static bool TryParseLegacyLinksLine(string baseDirectory, string line, out string source, out string resolvedPath)
+    {
+        source = string.Empty;
+        resolvedPath = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(line))
+            return false;
+
+        // 旧 links.txt は source,bundlePath 形式。source 側に ',' を含むケースを考慮し、
+        // 後ろから分割位置を探索して実在する bundlePath を優先する。
+        string? fallbackSource = null;
+        string? fallbackResolvedPath = null;
+        for (var index = line.Length - 1; index >= 0; index--)
+        {
+            if (line[index] != ',')
+                continue;
+
+            var left = line[..index].Trim();
+            var right = line[(index + 1)..].Trim();
+            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+                continue;
+
+            if (!TryResolvePathWithinBaseDirectory(baseDirectory, right, out var candidatePath))
+                continue;
+
+            if (File.Exists(candidatePath))
+            {
+                source = left;
+                resolvedPath = candidatePath;
+                return true;
+            }
+
+            fallbackSource ??= left;
+            fallbackResolvedPath ??= candidatePath;
+        }
+
+        if (fallbackSource is null || fallbackResolvedPath is null)
+            return false;
+
+        source = fallbackSource;
+        resolvedPath = fallbackResolvedPath;
+        return true;
+    }
+
     private static string EnsureTrailingDirectorySeparator(string path)
     {
         if (path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar))

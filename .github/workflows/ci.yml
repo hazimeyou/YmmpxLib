@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  build_and_test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Fetch YMM4 Build Libraries
+        shell: pwsh
+        run: ./scripts/fetch-ymm4-libs.ps1 -OutputDir "libs/YMM4"
+
+      - name: Restore
+        run: dotnet restore .\YMMPXLib.slnx
+
+      - name: Build
+        run: dotnet build .\YMMPXLib.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test .\YMMPXLib.slnx -c Release --no-build

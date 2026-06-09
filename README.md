@@ -177,19 +177,19 @@ YmmpxLib は **単一の YmmpxLib.dll** で動作し、互換モードで挙動�
 YMM4 のビルド用 DLL はリポジトリへ同梱せず、CI またはローカルスクリプトで取得します。
 
 ```powershell
-.\scripts\fetch-ymm4-libs.ps1
-dotnet build
+.\scripts\fetch-ymm4-libs.ps1 -OutputDir "libs/YMM4"
+dotnet build .\YMMPXLib.slnx -c Release
 ```
 
 ## Release 成果物
 
-- `YmmpxLib-vX.Y.Z.zip`
+- `YmmpxLib-v1.0.0.zip`
   - `YmmpxLib.dll`
   - `YmmpxLib.deps.json`
   - `README.md`
   - `LICENSE.txt`
 
-- `YmmpxLibPlugin-vX.Y.Z.ymme`
+- `YmmpxLibPlugin-v1.0.0.ymme`
   - `YmmpxLibPlugin.dll`
   - `YmmpxLibPlugin.deps.json` (存在する場合)
   - `YmmpxLib.dll`
