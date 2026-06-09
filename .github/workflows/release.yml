@@ -90,7 +90,7 @@ jobs:
           Copy-Item "${{ env.PUBLISH_PLUGIN_DIR }}\LICENSE.txt" "$pluginArchiveRoot\LICENSE.txt" -Force
 
           $pluginZipTemp = "${{ env.PACKAGE_DIR }}\YmmpxLibPlugin-${{ github.ref_name }}.zip"
-          $pluginYmme = "${{ env.PACKAGE_DIR }}\YmmpxLibPlugin-${{ github.ref_name }}.ymme"
+          $pluginYmme = "${{ env.PACKAGE_DIR }}\YmmpxLibPlugin.ymme"
 
           if (Test-Path $pluginZipTemp) { Remove-Item $pluginZipTemp -Force }
           if (Test-Path $pluginYmme) { Remove-Item $pluginYmme -Force }
@@ -105,6 +105,6 @@ jobs:
           tag: ${{ github.ref_name }}
           artifacts: |
             package/YmmpxLib-${{ github.ref_name }}.zip
-            package/YmmpxLibPlugin-${{ github.ref_name }}.ymme
+            package/YmmpxLibPlugin.ymme
           draft: true
           prerelease: false

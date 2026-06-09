@@ -189,7 +189,7 @@ dotnet build .\YMMPXLib.slnx -c Release
   - `README.md`
   - `LICENSE.txt`
 
-- `YmmpxLibPlugin-v1.0.0.ymme`
+- `YmmpxLibPlugin.ymme`
   - `YmmpxLibPlugin.dll`
   - `YmmpxLibPlugin.deps.json` (存在する場合)
   - `YmmpxLib.dll`

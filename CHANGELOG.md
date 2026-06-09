@@ -8,5 +8,9 @@
 - `links.json` / `manifest.json` / `links.txt` compatible link map loading.
 - YMM4 shared library plugin package.
 
+### Changed
+- Release package name is now fixed as `YmmpxLibPlugin.ymme`.
+- Versioning is managed through GitHub Releases and assembly metadata.
+
 ### Compatibility
 - Public API is treated as stable from 1.0.0.
