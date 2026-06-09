@@ -146,6 +146,9 @@ Console.WriteLine(unpack.ProjectFilePath);
 - 実行例: dotnet run --project .\\YMMPXCli\\YMMPXCli.csproj -- "C:\\path\\to\\project.ymmp"
 - 実行例: dotnet run --project .\\YMMPXCli\\YMMPXCli.csproj -- "C:\\path\\to\\package.ymmpx"
 
+また運用例としてYMMResourcePackager を参考にしてください
+
+- [YMMResourcePackager（同梱プラグイン）のリポジトリ](https://github.com/hazimeyou/YMMResourcePackager)
 
 ## 互換モード
 
