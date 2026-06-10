@@ -139,7 +139,7 @@ Console.WriteLine(unpack.ProjectFilePath);
 
 ## Versioning
 
-YmmpxLib separates library API versioning, internal implementation versioning, and `.ymmpx` format compatibility mode.
+YmmpxLib separates library API versioning, internal implementation versioning, assembly metadata, and `.ymmpx` format compatibility mode.
 
 See [docs/versioning.md](docs/versioning.md) for details.
 

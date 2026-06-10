@@ -4,6 +4,7 @@ YmmpxLib separates three different version concepts:
 
 - Library API version
 - Internal implementation version
+- Assembly metadata
 - `.ymmpx` internal format compatibility version
 
 ## Library API version
@@ -22,6 +23,16 @@ var apiVersionCode = YmmpxLibraryInfo.ApiVersionCode;
 var internalVersion = YmmpxLibraryInfo.InternalVersion;
 var internalVersionCode = YmmpxLibraryInfo.InternalVersionCode;
 ```
+
+## Assembly metadata
+
+`YmmpxLibraryInfo.AssemblyVersion` is the version of the built .NET assembly.
+It comes from .NET assembly metadata.
+
+`YmmpxLibraryInfo.InformationalVersion` is derived from informational metadata.
+NuGet, CI, and `SourceRevisionId` values may be reflected there.
+
+These values serve different purposes from `ApiVersion` and `InternalVersion`, so they do not need to match.
 
 ## `.ymmpx` internal format compatibility
 

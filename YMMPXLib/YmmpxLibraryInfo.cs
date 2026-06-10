@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace YmmpxLib;
 
 /// <summary>
@@ -27,4 +29,20 @@ public static class YmmpxLibraryInfo
     /// YmmpxLib の内部実装バージョンを数値比較しやすい形で表した値です。
     /// </summary>
     public const int InternalVersionCode = 100;
+
+    /// <summary>
+    /// YmmpxLib アセンブリのバージョンです。
+    /// </summary>
+    public static Version AssemblyVersion =>
+        typeof(YmmpxLibraryInfo).Assembly.GetName().Version ?? new Version(0, 0, 0, 0);
+
+    /// <summary>
+    /// YmmpxLib アセンブリの情報バージョンです。
+    /// NuGet PackageVersion や SourceRevisionId が反映される場合があります。
+    /// </summary>
+    public static string InformationalVersion =>
+        typeof(YmmpxLibraryInfo).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion
+        ?? string.Empty;
 }
