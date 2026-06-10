@@ -3,13 +3,23 @@
 - [ ] dotnet restore
 - [ ] dotnet build -c Release
 - [ ] dotnet test -c Release
+- [ ] dotnet format --verify-no-changes
+- [ ] git diff --check
+- [ ] git show --check --format= HEAD
+- [ ] dependency audit script fails when vulnerable or deprecated packages are detected
+- [ ] release DLL and deps metadata use the tag version, not `0.0.0`
+- [ ] pinned YMM4 release asset passes SHA-256 verification
 - [ ] sample .ymmp can be packaged into .ymmpx
 - [ ] sample .ymmpx can be extracted
 - [ ] restored .ymmp FilePath values point to extracted resources
 - [ ] YmmpxLibPlugin loads in YMM4
 - [ ] release assets include README.md and LICENSE.txt
-- [ ] release is not marked as prerelease
+- [ ] prerelease tags create prerelease releases; stable tags create stable releases
 - [ ] release artifacts are `YmmpxLib-v1.0.0.zip` and `YmmpxLibPlugin.ymme`
 - [ ] verify the plugin display name is `YmmpxLib Shared Library` in YMM4
 - [ ] verify package / extract round-trips preserve `FilePath`
 - [ ] verify restoration works with `links.json`, `manifest.json`, or `links.txt`
+- [ ] verify preexisting extraction files and link definitions are not modified or consumed
+- [ ] verify excessive compression ratio archives are rejected
+- [ ] verify generated public XML documentation contains no mojibake
+- [ ] verify Release build completes with zero warnings

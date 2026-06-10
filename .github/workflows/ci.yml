@@ -30,3 +30,17 @@ jobs:
 
       - name: Test
         run: dotnet test .\YMMPXLib.slnx -c Release --no-build
+
+      - name: Verify Formatting
+        run: dotnet format .\YMMPXLib.slnx --verify-no-changes --no-restore
+
+      - name: Verify Diff
+        run: |
+          git diff --check
+          git show --check --format= HEAD
+
+      - name: Audit Dependencies
+        shell: pwsh
+        run: |
+          ./scripts/audit-dotnet-packages.ps1 -Audit vulnerable
+          ./scripts/audit-dotnet-packages.ps1 -Audit deprecated

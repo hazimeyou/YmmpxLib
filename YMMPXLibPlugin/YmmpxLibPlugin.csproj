@@ -13,20 +13,9 @@
     <Reference Include="YukkuriMovieMaker.Plugin">
       <HintPath>..\libs\YMM4\YukkuriMovieMaker.Plugin.dll</HintPath>
       <Private>false</Private>
+      <!-- Only the plugin contract is needed at compile time; YMM supplies its dependency graph. -->
+      <ExternallyResolved>true</ExternallyResolved>
     </Reference>
   </ItemGroup>
 
-  <ItemGroup Condition="Exists('..\libs\YMM4\YukkuriMovieMaker.dll')">
-    <Reference Include="YukkuriMovieMaker">
-      <HintPath>..\libs\YMM4\YukkuriMovieMaker.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-  </ItemGroup>
-
-  <ItemGroup Condition="Exists('..\libs\YMM4\YukkuriMovieMaker.Controls.dll')">
-    <Reference Include="YukkuriMovieMaker.Controls">
-      <HintPath>..\libs\YMM4\YukkuriMovieMaker.Controls.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-  </ItemGroup>
 </Project>

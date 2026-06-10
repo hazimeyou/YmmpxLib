@@ -106,9 +106,10 @@ public static class YmmpxProjectJson
         {
             foreach (var item in obj.ToList())
             {
-                if (item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) && item.Value is JsonValue value)
+                if (item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
+                    item.Value is JsonValue value &&
+                    value.TryGetValue<string>(out var path))
                 {
-                    var path = value.GetValue<string>();
                     if (!string.IsNullOrWhiteSpace(path))
                     {
                         // 完全一致 -> 正規化一致 -> ファイル名一意一致 の順で解決する。
@@ -182,9 +183,10 @@ public static class YmmpxProjectJson
         {
             foreach (var item in obj.ToList())
             {
-                if (item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) && item.Value is JsonValue value)
+                if (item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
+                    item.Value is JsonValue value &&
+                    value.TryGetValue<string>(out var path))
                 {
-                    var path = value.GetValue<string>();
                     if (!string.IsNullOrWhiteSpace(path))
                     {
                         var converted = pathConverter(path);

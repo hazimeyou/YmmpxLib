@@ -137,12 +137,6 @@ Console.WriteLine(unpack.ProjectFilePath);
 - .ymmp: パッケージ入力（同梱元）
 - .ymmpx: パッケージ出力 / 展開入力
 
-## Versioning
-
-YmmpxLib separates library API versioning, internal implementation versioning, assembly metadata, and `.ymmpx` format compatibility mode.
-
-See [docs/versioning.md](docs/versioning.md) for details.
-
 ## CLI
 
 サンプルとして YMMPXCli を利用できます。
@@ -152,9 +146,6 @@ See [docs/versioning.md](docs/versioning.md) for details.
 - 実行例: dotnet run --project .\\YMMPXCli\\YMMPXCli.csproj -- "C:\\path\\to\\project.ymmp"
 - 実行例: dotnet run --project .\\YMMPXCli\\YMMPXCli.csproj -- "C:\\path\\to\\package.ymmpx"
 
-また運用例としてYMMResourcePackager を参考にしてください
-
-- [YMMResourcePackager（同梱プラグイン）のリポジトリ](https://github.com/hazimeyou/YMMResourcePackager)
 
 ## 互換モード
 
@@ -189,6 +180,12 @@ YMM4 のビルド用 DLL はリポジトリへ同梱せず、CI またはロー�
 .\scripts\fetch-ymm4-libs.ps1 -OutputDir "libs/YMM4"
 dotnet build .\YMMPXLib.slnx -c Release
 ```
+
+## Versioning
+
+YmmpxLib は、ライブラリ API バージョン、内部実装バージョン、アセンブリメタデータ、`.ymmpx` 形式の互換モードを分けて管理します。
+
+詳細は [docs/versioning.md](docs/versioning.md) を参照してください。
 
 ## Release 成果物
 
