@@ -137,6 +137,12 @@ Console.WriteLine(unpack.ProjectFilePath);
 - .ymmp: パッケージ入力（同梱元）
 - .ymmpx: パッケージ出力 / 展開入力
 
+## Versioning
+
+YmmpxLib separates library API versioning, internal implementation versioning, and `.ymmpx` format compatibility mode.
+
+See [docs/versioning.md](docs/versioning.md) for details.
+
 ## CLI
 
 サンプルとして YMMPXCli を利用できます。
