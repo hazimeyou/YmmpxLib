@@ -126,4 +126,3 @@ Console.WriteLine(unpack.ProjectFilePath);
 dotnet run --project .\YMMPXCli\YMMPXCli.csproj -- "C:\path\to\project.ymmp"
 dotnet run --project .\YMMPXCli\YMMPXCli.csproj -- "C:\path\to\package.ymmpx"
 ```
-
