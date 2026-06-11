@@ -1,13 +1,13 @@
 namespace YmmpxLib;
 
 /// <summary>
-/// Ymmpx サービス全般の実行オプションです。
+/// Ymmpx サービス全体の動作オプションです。
 /// </summary>
 public sealed class YmmpxOptions
 {
     /// <summary>
-    /// .ymmpx の作成・展開・内部ファイル処理に使用する互換モードを指定します。
-    /// これは YmmpxLib 自体の API バージョンではありません。
+    /// 利用する互換性バージョンです。
+    /// 現状は Latest と同等の実装を返しますが、将来の形式差分に備えて保持しています。
     /// </summary>
     public YmmpxCompatibilityVersion CompatibilityVersion { get; set; } = YmmpxCompatibilityVersion.Latest;
 }
