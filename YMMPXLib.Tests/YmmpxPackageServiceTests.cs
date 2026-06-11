@@ -413,6 +413,28 @@ public sealed class YmmpxPackageServiceTests
 
         Assert.False(File.Exists(Path.Combine(extractPath, "first.txt")));
         Assert.False(File.Exists(Path.Combine(extractPath, "project.ymmp")));
+        Assert.False(Directory.Exists(extractPath));
+    }
+
+    [Fact]
+    public void ExtractAndRestoreProject_IgnoresMalformedLinkPaths()
+    {
+        using var workspace = new TemporaryDirectory();
+        var packagePath = Path.Combine(workspace.Path, "malformed.ymmpx");
+        var extractPath = Path.Combine(workspace.Path, "extract");
+        CreateArchive(packagePath, archive =>
+        {
+            WriteEntry(archive, "project.ymmp", "{}");
+            WriteEntry(archive, "links.json", JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["sample.txt"] = "\u0000"
+            }));
+        });
+
+        var result = YmmpxPackageService.ExtractAndRestoreProject(packagePath, extractPath);
+
+        Assert.True(File.Exists(result.ProjectFilePath));
+        Assert.Equal(0, result.ReplacedPathCount);
     }
 
     [Fact]
@@ -588,6 +610,24 @@ public sealed class YmmpxPackageServiceTests
 
         Assert.Single(map);
         Assert.Equal(resourcePath, map["foo,bar.wav"]);
+    }
+
+    [Fact]
+    public void LoadLinkMap_IgnoresMalformedLinksJsonValues()
+    {
+        using var workspace = new TemporaryDirectory();
+        var baseDirectory = workspace.Path;
+
+        File.WriteAllText(
+            Path.Combine(baseDirectory, "links.json"),
+            JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["sample.txt"] = "\u0000"
+            }));
+
+        var map = YmmpxPackageService.LoadLinkMap(baseDirectory);
+
+        Assert.Empty(map);
     }
 
     private static void CreateArchive(string path, Action<ZipArchive> configure)

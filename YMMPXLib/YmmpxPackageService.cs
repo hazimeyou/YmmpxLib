@@ -52,6 +52,8 @@ public static class YmmpxPackageService
             : excludedFiles
                 .Where(path => !string.IsNullOrWhiteSpace(path))
                 .Select(path => NormalizePath(projectDirectory, path))
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path!)
                 .ToHashSet(GetPathComparer());
 
         var projectText = await File.ReadAllTextAsync(projectFilePath, cancellationToken).ConfigureAwait(false);
@@ -67,14 +69,15 @@ public static class YmmpxPackageService
                 ResolvedPath = NormalizePath(projectDirectory, originalPath),
             })
             .Where(x =>
-                File.Exists(x.ResolvedPath) &&
-                !excluded.Contains(x.ResolvedPath) &&
-                !string.Equals(x.ResolvedPath, normalizedProjectPath, GetPathComparison()))
-            .GroupBy(x => x.ResolvedPath, GetPathComparer())
+                !string.IsNullOrWhiteSpace(x.ResolvedPath) &&
+                File.Exists(x.ResolvedPath!) &&
+                !excluded.Contains(x.ResolvedPath!) &&
+                !string.Equals(x.ResolvedPath!, normalizedProjectPath, GetPathComparison()))
+            .GroupBy(x => x.ResolvedPath!, GetPathComparer())
             .Select(group => group.First())
             .ToList();
 
-        if (resourceEntries.Any(x => string.Equals(x.ResolvedPath, normalizedOutputPath, GetPathComparison())))
+        if (resourceEntries.Any(x => string.Equals(x.ResolvedPath!, normalizedOutputPath, GetPathComparison())))
             throw new ArgumentException("Output path must be different from every packaged resource path.", nameof(outputPath));
 
         // 保存名 (ファイル名ベース + 連番) の対応表を先に作り、JSON 書き換えと links.json で共用する。
@@ -84,12 +87,12 @@ public static class YmmpxPackageService
         var filesToPackage = new Dictionary<string, string>(GetPathComparer());
         foreach (var entry in resourceEntries)
         {
-            var fileName = Path.GetFileName(entry.ResolvedPath);
+            var fileName = Path.GetFileName(entry.ResolvedPath!);
             var uniqueFileName = GetUniqueFileName(fileName, usedNames);
             var packagedPath = $"resources/{uniqueFileName}";
-            packagedNameByResolvedPath[entry.ResolvedPath] = uniqueFileName;
+            packagedNameByResolvedPath[entry.ResolvedPath!] = uniqueFileName;
             fileMap[uniqueFileName] = packagedPath;
-            filesToPackage[entry.ResolvedPath] = packagedPath;
+            filesToPackage[entry.ResolvedPath!] = packagedPath;
         }
 
         // 必要に応じて UI 状態除外と FilePath のファイル名化を行った JSON をパッケージ化する。
@@ -103,7 +106,7 @@ public static class YmmpxPackageService
             YmmpxProjectJson.ReplaceFilePathsForPackaging(projectNode, sourcePath =>
             {
                 var resolved = NormalizePath(projectDirectory, sourcePath);
-                return packagedNameByResolvedPath.TryGetValue(resolved, out var packagedName)
+                return resolved is not null && packagedNameByResolvedPath.TryGetValue(resolved, out var packagedName)
                     ? packagedName
                     : null;
             });
@@ -264,23 +267,23 @@ public static class YmmpxPackageService
             throw new FileNotFoundException("Ymmpx file was not found.", ymmpxPath);
 
         // Zip Slip 対策付きの安全展開を行う。
-        var extractedFiles = ExtractArchiveSafely(ymmpxPath, extractDirectory);
+        var extractedArchive = ExtractArchiveSafely(ymmpxPath, extractDirectory);
 
-        var cleanupPaths = new HashSet<string>(extractedFiles, GetPathComparer());
+        var cleanupPaths = new HashSet<string>(extractedArchive.Files, GetPathComparer());
         try
         {
             // 今回展開した links.* / manifest.json のみを解釈してマップを読み込む。
-            var linkMap = LoadLinkMap(extractDirectory, extractedFiles);
+            var linkMap = LoadLinkMap(extractDirectory, extractedArchive.Files);
             var markerPath = Path.GetFullPath(Path.Combine(extractDirectory, "_ymmpx_project_path.txt"));
             var projectPath = string.Empty;
-            if (extractedFiles.Contains(markerPath))
+            if (extractedArchive.Files.Contains(markerPath))
             {
                 var relativeProjectPath = File.ReadAllText(markerPath).Trim();
                 if (!string.IsNullOrWhiteSpace(relativeProjectPath))
                 {
                     if (TryResolvePathWithinBaseDirectory(extractDirectory, relativeProjectPath, out var candidate) &&
                         candidate.EndsWith(".ymmp", StringComparison.OrdinalIgnoreCase) &&
-                        extractedFiles.Contains(candidate))
+                        extractedArchive.Files.Contains(candidate))
                         projectPath = candidate;
                 }
             }
@@ -289,14 +292,14 @@ public static class YmmpxPackageService
             if (string.IsNullOrWhiteSpace(projectPath))
             {
                 var legacyProject = Path.Combine(extractDirectory, "project.ymmp");
-                if (extractedFiles.Contains(Path.GetFullPath(legacyProject)))
+                if (extractedArchive.Files.Contains(Path.GetFullPath(legacyProject)))
                     projectPath = legacyProject;
             }
 
             // さらに見つからない場合は今回展開したファイルのみを探索。
             if (string.IsNullOrWhiteSpace(projectPath))
             {
-                var projectCandidates = extractedFiles
+                var projectCandidates = extractedArchive.Files
                     .Where(path => path.EndsWith(".ymmp", StringComparison.OrdinalIgnoreCase))
                     .Take(2)
                     .ToArray();
@@ -345,6 +348,7 @@ public static class YmmpxPackageService
         catch
         {
             CleanupExtractedFiles(cleanupPaths);
+            CleanupExtractedDirectories(extractedArchive.Directories);
             throw;
         }
     }
@@ -507,19 +511,21 @@ public static class YmmpxPackageService
         return Path.GetFullPath(Path.Combine(baseDirectory, relativeOrAbsolutePath));
     }
 
-    private static IReadOnlySet<string> ExtractArchiveSafely(string ymmpxPath, string extractDirectory)
+    private static ExtractedArchiveContents ExtractArchiveSafely(string ymmpxPath, string extractDirectory)
     {
         // Zip Slip 対策として展開先ベースの prefix を固定する。
         var baseDirectory = EnsureTrailingDirectorySeparator(Path.GetFullPath(extractDirectory));
 
         using var archive = ZipFile.OpenRead(ymmpxPath);
         var extractedFiles = new HashSet<string>(GetPathComparer());
+        var extractedDirectories = new HashSet<string>(GetPathComparer());
 
         try
         {
             ValidateArchiveEntries(archive, baseDirectory);
             EnsureDirectoryPathIsSafe(extractDirectory, baseDirectory);
             Directory.CreateDirectory(extractDirectory);
+            extractedDirectories.Add(Path.GetFullPath(extractDirectory));
 
             long extractedTotalLength = 0;
             foreach (var entry in archive.Entries)
@@ -529,6 +535,7 @@ public static class YmmpxPackageService
                 {
                     EnsureDirectoryPathIsSafe(destinationPath, baseDirectory);
                     Directory.CreateDirectory(destinationPath);
+                    extractedDirectories.Add(destinationPath);
                     continue;
                 }
 
@@ -537,17 +544,19 @@ public static class YmmpxPackageService
                 {
                     EnsureDirectoryPathIsSafe(destinationDirectory, baseDirectory);
                     Directory.CreateDirectory(destinationDirectory);
+                    extractedDirectories.Add(destinationDirectory);
                 }
 
                 ExtractEntrySafely(entry, destinationPath, ref extractedTotalLength);
                 extractedFiles.Add(destinationPath);
             }
 
-            return extractedFiles;
+            return new ExtractedArchiveContents(extractedFiles, extractedDirectories);
         }
         catch
         {
             CleanupExtractedFiles(extractedFiles);
+            CleanupExtractedDirectories(extractedDirectories);
             throw;
         }
     }
@@ -673,20 +682,59 @@ public static class YmmpxPackageService
             }
         }
     }
+
+    private static void CleanupExtractedDirectories(IEnumerable<string> extractedDirectories)
+    {
+        foreach (var path in extractedDirectories.OrderByDescending(path => path.Length))
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                    Directory.Delete(path, recursive: false);
+            }
+            catch
+            {
+                // 先祖ディレクトリに残ったファイルや他プロセスの利用は無視する。
+            }
+        }
+    }
     private static bool TryResolvePathWithinBaseDirectory(string baseDirectory, string relativePath, out string resolvedPath)
     {
         resolvedPath = string.Empty;
-        // マニフェスト上の相対パスのみ許可し、絶対パス注入を拒否する。
-        if (Path.IsPathRooted(relativePath))
-            return false;
+        try
+        {
+            // マニフェスト上の相対パスのみ許可し、絶対パス注入を拒否する。
+            if (Path.IsPathRooted(relativePath))
+                return false;
 
-        var candidate = ResolvePath(baseDirectory, relativePath);
-        var normalizedBaseDirectory = EnsureTrailingDirectorySeparator(Path.GetFullPath(baseDirectory));
-        if (!candidate.StartsWith(normalizedBaseDirectory, GetPathComparison()))
-            return false;
+            var candidate = ResolvePath(baseDirectory, relativePath);
+            var normalizedBaseDirectory = EnsureTrailingDirectorySeparator(Path.GetFullPath(baseDirectory));
+            if (!candidate.StartsWith(normalizedBaseDirectory, GetPathComparison()))
+                return false;
 
-        resolvedPath = candidate;
-        return true;
+            resolvedPath = candidate;
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+        catch (PathTooLongException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private static bool TryParseLegacyLinksLine(
@@ -850,19 +898,42 @@ public static class YmmpxPackageService
         return MaxArchiveEntryLength;
     }
 
-    private static string NormalizePath(string baseDirectory, string path)
+    private static string? NormalizePath(string baseDirectory, string path)
     {
-        // 環境変数と引用符を展開・除去して入力揺れを吸収する。
-        path = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
-        // file:// URI はローカルパスへ戻す。
-        if (Uri.TryCreate(path, UriKind.Absolute, out var uri) && uri.IsFile)
-            return Path.GetFullPath(uri.LocalPath);
+        try
+        {
+            // 環境変数と引用符を展開・除去して入力揺れを吸収する。
+            path = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
+            // file:// URI はローカルパスへ戻す。
+            if (Uri.TryCreate(path, UriKind.Absolute, out var uri) && uri.IsFile)
+                return Path.GetFullPath(uri.LocalPath);
 
-        // 相対パスはプロジェクト基準で解決する。
-        if (Path.IsPathRooted(path))
-            return Path.GetFullPath(path);
+            // 相対パスはプロジェクト基準で解決する。
+            if (Path.IsPathRooted(path))
+                return Path.GetFullPath(path);
 
-        return Path.GetFullPath(Path.Combine(baseDirectory, path));
+            return Path.GetFullPath(Path.Combine(baseDirectory, path));
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+        catch (PathTooLongException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static string NormalizeProjectPath(string path)
@@ -870,6 +941,10 @@ public static class YmmpxPackageService
         // プロジェクト JSON 内では OS 差異を避けるため区切りを '/' に揃える。
         return path.Replace('\\', '/');
     }
+
+    private sealed record ExtractedArchiveContents(
+        IReadOnlySet<string> Files,
+        IReadOnlySet<string> Directories);
 
     private static string GetUniqueFileName(string fileName, ISet<string> usedNames)
     {
