@@ -1,22 +1,17 @@
 namespace YmmpxLib;
 
 /// <summary>
-/// Ymmpx の入口サービスを構成します。
+/// YMMPX の作成と展開を行うサービスのファクトリです。
 /// </summary>
 public static class YmmpxService
 {
     /// <summary>
-    /// 指定したオプションに基づく <see cref="IYmmpxService"/> 実装を取得します。
+    /// 指定されたオプションに基づく <see cref="IYmmpxService"/> 実装を返します。
     /// </summary>
-    /// <param name="options">サービス実行時のオプション。</param>
-    /// <returns>利用可能なサービス実装。</returns>
     public static IYmmpxService Create(YmmpxOptions? options = null)
     {
         options ??= new YmmpxOptions();
 
-        // 現時点ではフォーマット互換モードごとの実装差はありません。
-        // 将来 .ymmpx 内部フォーマットに破壊的変更が入った場合、
-        // ここで互換モードごとのサービス実装に分岐します。
         return options.CompatibilityVersion switch
         {
             YmmpxCompatibilityVersion.Latest => LatestYmmpxService.Instance,

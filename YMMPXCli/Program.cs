@@ -19,7 +19,7 @@ try
     if (extension.Equals(".ymmp", StringComparison.OrdinalIgnoreCase))
     {
         var outputPath = Path.ChangeExtension(inputPath, ".ymmpx");
-        var progress = new Progress<YmmpxPackagingProgress>(p =>
+        var progress = new ConsoleProgress<YmmpxPackagingProgress>(p =>
         {
             var percent = Math.Clamp(p.Percentage, 0, 100);
             var now = DateTime.Now.ToString("HH:mm:ss.fff");
@@ -91,4 +91,23 @@ static string FormatBytes(long bytes)
     }
 
     return $"{size:0.##} {units[unitIndex]}";
+}
+
+internal sealed class ConsoleProgress<T> : IProgress<T>
+{
+    private readonly Action<T> _onReport;
+    private readonly object _gate = new();
+
+    public ConsoleProgress(Action<T> onReport)
+    {
+        _onReport = onReport;
+    }
+
+    public void Report(T value)
+    {
+        lock (_gate)
+        {
+            _onReport(value);
+        }
+    }
 }

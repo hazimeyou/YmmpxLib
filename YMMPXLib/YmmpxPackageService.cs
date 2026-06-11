@@ -523,9 +523,7 @@ public static class YmmpxPackageService
         try
         {
             ValidateArchiveEntries(archive, baseDirectory);
-            EnsureDirectoryPathIsSafe(extractDirectory, baseDirectory);
-            Directory.CreateDirectory(extractDirectory);
-            extractedDirectories.Add(Path.GetFullPath(extractDirectory));
+            CreateDirectoryForExtraction(extractDirectory, baseDirectory, extractedDirectories);
 
             long extractedTotalLength = 0;
             foreach (var entry in archive.Entries)
@@ -542,9 +540,7 @@ public static class YmmpxPackageService
                 var destinationDirectory = Path.GetDirectoryName(destinationPath);
                 if (!string.IsNullOrWhiteSpace(destinationDirectory))
                 {
-                    EnsureDirectoryPathIsSafe(destinationDirectory, baseDirectory);
-                    Directory.CreateDirectory(destinationDirectory);
-                    extractedDirectories.Add(destinationDirectory);
+                    CreateDirectoryForExtraction(destinationDirectory, baseDirectory, extractedDirectories);
                 }
 
                 ExtractEntrySafely(entry, destinationPath, ref extractedTotalLength);
@@ -698,6 +694,21 @@ public static class YmmpxPackageService
             }
         }
     }
+
+    private static void CreateDirectoryForExtraction(
+        string path,
+        string baseDirectory,
+        ISet<string> extractedDirectories)
+    {
+        EnsureDirectoryPathIsSafe(path, baseDirectory);
+
+        var fullPath = Path.GetFullPath(path);
+        var existedBefore = Directory.Exists(fullPath);
+        Directory.CreateDirectory(fullPath);
+        if (!existedBefore)
+            extractedDirectories.Add(fullPath);
+    }
+
     private static bool TryResolvePathWithinBaseDirectory(string baseDirectory, string relativePath, out string resolvedPath)
     {
         resolvedPath = string.Empty;

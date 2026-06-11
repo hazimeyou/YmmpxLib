@@ -417,6 +417,29 @@ public sealed class YmmpxPackageServiceTests
     }
 
     [Fact]
+    public void ExtractAndRestoreProject_DoesNotDeletePreexistingEmptyDirectoriesOnFailure()
+    {
+        using var workspace = new TemporaryDirectory();
+        var packagePath = Path.Combine(workspace.Path, "broken.ymmpx");
+        var extractPath = Path.Combine(workspace.Path, "extract");
+        var resourceDirectory = Path.Combine(extractPath, "resources");
+
+        Directory.CreateDirectory(resourceDirectory);
+        CreateArchive(packagePath, archive =>
+        {
+            WriteEntry(archive, "resources/first.txt", "first");
+            WriteEntry(archive, "project.ymmp", "{");
+        });
+
+        Assert.ThrowsAny<JsonException>(() =>
+            YmmpxPackageService.ExtractAndRestoreProject(packagePath, extractPath));
+
+        Assert.True(Directory.Exists(extractPath));
+        Assert.True(Directory.Exists(resourceDirectory));
+        Assert.False(File.Exists(Path.Combine(resourceDirectory, "first.txt")));
+    }
+
+    [Fact]
     public void ExtractAndRestoreProject_IgnoresMalformedLinkPaths()
     {
         using var workspace = new TemporaryDirectory();
