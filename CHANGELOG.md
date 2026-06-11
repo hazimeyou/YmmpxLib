@@ -24,6 +24,10 @@
 - Required release builds to pass the test suite before creating release artifacts.
 - Made dependency audits fail CI when vulnerable or deprecated packages are detected.
 - Enforced SemVer release tags and derived GitHub prerelease status from the tag.
+- Removed file-name-only path restoration to prevent matching unrelated resources.
+- Repacked highly compressible generated packages without compression when required by extraction limits.
+- Rejected archive entries that could target NTFS alternate data streams.
+- Avoided file/directory cross-kind collisions in available-path helpers.
 
 ### Compatibility
 - Public API is treated as stable from 1.0.0.

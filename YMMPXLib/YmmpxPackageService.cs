@@ -233,6 +233,7 @@ public static class YmmpxPackageService
                 }
             }
 
+            await RepackWithoutCompressionIfNeededAsync(temporaryOutputPath, cancellationToken).ConfigureAwait(false);
             File.Move(temporaryOutputPath, normalizedOutputPath, overwrite: true);
             completedCount = totalCount;
             processedBytes = totalBytes > 0 ? totalBytes : 0;
@@ -455,7 +456,7 @@ public static class YmmpxPackageService
     }
 
     /// <summary>
-    /// 既存フォルダと衝突しないディレクトリ名を生成します。
+    /// 既存ファイルまたはフォルダと衝突しないディレクトリ名を生成します。
     /// </summary>
     public static string GetAvailableDirectoryPath(string desiredPath)
     {
@@ -463,7 +464,7 @@ public static class YmmpxPackageService
 
         var candidate = desiredPath;
         var suffix = 1;
-        while (Directory.Exists(candidate))
+        while (PathExists(candidate))
         {
             candidate = $"{desiredPath}_{suffix}";
             suffix++;
@@ -473,13 +474,13 @@ public static class YmmpxPackageService
     }
 
     /// <summary>
-    /// 既存ファイルと衝突しないファイルパスを生成します。
+    /// 既存ファイルまたはフォルダと衝突しないファイルパスを生成します。
     /// </summary>
     public static string GetAvailableFilePath(string desiredPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(desiredPath);
 
-        if (!File.Exists(desiredPath))
+        if (!PathExists(desiredPath))
             return desiredPath;
 
         var directory = Path.GetDirectoryName(desiredPath) ?? string.Empty;
@@ -488,7 +489,7 @@ public static class YmmpxPackageService
 
         var suffix = 1;
         var candidate = desiredPath;
-        while (File.Exists(candidate))
+        while (PathExists(candidate))
         {
             candidate = Path.Combine(directory, $"{fileNameWithoutExtension}_{suffix}{extension}");
             suffix++;
@@ -561,6 +562,9 @@ public static class YmmpxPackageService
         var destinationPaths = new HashSet<string>(GetPathComparer());
         foreach (var entry in archive.Entries)
         {
+            if (entry.FullName.Contains(':', StringComparison.Ordinal))
+                throw new InvalidDataException($"Archive entry contains an alternate data stream separator: {entry.FullName}");
+
             var destinationPath = Path.GetFullPath(Path.Combine(baseDirectory, entry.FullName));
             if (!destinationPath.StartsWith(baseDirectory, GetPathComparison()))
                 throw new InvalidDataException($"Entry path escapes extraction directory: {entry.FullName}");
@@ -744,11 +748,72 @@ public static class YmmpxPackageService
 
     private static void ValidateCompressionRatio(string entryName, long length, long compressedLength)
     {
-        if (length <= CompressionRatioCheckThreshold)
+        if (HasExcessiveCompressionRatio(length, compressedLength))
+            throw new InvalidDataException($"Archive entry has an excessive compression ratio: {entryName}.");
+    }
+
+    private static bool PathExists(string path)
+    {
+        return File.Exists(path) || Directory.Exists(path);
+    }
+
+    private static async Task RepackWithoutCompressionIfNeededAsync(
+        string archivePath,
+        CancellationToken cancellationToken)
+    {
+        if (!ArchiveHasExcessiveCompressionRatio(archivePath))
             return;
 
-        if (compressedLength <= 0 || length / compressedLength > MaxCompressionRatio)
-            throw new InvalidDataException($"Archive entry has an excessive compression ratio: {entryName}.");
+        var repackedPath = $"{archivePath}.{Guid.NewGuid():N}.repack";
+        try
+        {
+            using (var sourceArchive = ZipFile.OpenRead(archivePath))
+            using (var destinationArchive = ZipFile.Open(repackedPath, ZipArchiveMode.Create))
+            {
+                foreach (var sourceEntry in sourceArchive.Entries)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var destinationEntry = destinationArchive.CreateEntry(
+                        sourceEntry.FullName,
+                        CompressionLevel.NoCompression);
+                    if (string.IsNullOrEmpty(sourceEntry.Name))
+                        continue;
+
+                    await using var source = sourceEntry.Open();
+                    await using var destination = destinationEntry.Open();
+                    await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            File.Move(repackedPath, archivePath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(repackedPath))
+                File.Delete(repackedPath);
+        }
+    }
+
+    private static bool ArchiveHasExcessiveCompressionRatio(string archivePath)
+    {
+        using var archive = ZipFile.OpenRead(archivePath);
+        long totalLength = 0;
+        long totalCompressedLength = 0;
+        foreach (var entry in archive.Entries)
+        {
+            totalLength = checked(totalLength + entry.Length);
+            totalCompressedLength = checked(totalCompressedLength + entry.CompressedLength);
+            if (HasExcessiveCompressionRatio(entry.Length, entry.CompressedLength))
+                return true;
+        }
+
+        return HasExcessiveCompressionRatio(totalLength, totalCompressedLength);
+    }
+
+    private static bool HasExcessiveCompressionRatio(long length, long compressedLength)
+    {
+        return length > CompressionRatioCheckThreshold &&
+            (compressedLength <= 0 || length / compressedLength > MaxCompressionRatio);
     }
 
     private static string EnsureTrailingDirectorySeparator(string path)

@@ -112,7 +112,7 @@ public static class YmmpxProjectJson
                 {
                     if (!string.IsNullOrWhiteSpace(path))
                     {
-                        // 完全一致 -> 正規化一致 -> ファイル名一意一致 の順で解決する。
+                        // 完全一致または正規化一致したパスだけを解決する。
                         if (TryResolveMappedPath(linkMap, path, out var resolved))
                         {
                             obj["FilePath"] = resolved;
@@ -157,22 +157,7 @@ public static class YmmpxProjectJson
             return true;
         }
 
-        // 3) 最終フォールバックとしてファイル名の一意一致を使う。
-        var fileName = Path.GetFileName(path);
-        if (string.IsNullOrWhiteSpace(fileName))
-            return false;
-
-        var matchedValue = linkMap
-            .Where(x => string.Equals(Path.GetFileName(x.Key), fileName, StringComparison.OrdinalIgnoreCase))
-            .Select(x => x.Value)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (matchedValue.Count != 1)
-            return false;
-
-        mappedPath = matchedValue[0];
-        return true;
+        return false;
     }
 
     private static int ReplaceFilePathsForPackagingCore(JsonNode node, Func<string, string?> pathConverter)
@@ -226,7 +211,23 @@ public static class YmmpxProjectJson
             path = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
             return Path.GetFullPath(path);
         }
-        catch (Exception)
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+        catch (PathTooLongException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
         {
             return null;
         }

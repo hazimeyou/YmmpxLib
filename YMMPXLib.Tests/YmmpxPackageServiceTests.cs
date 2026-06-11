@@ -77,6 +77,35 @@ public sealed class YmmpxPackageServiceTests
     }
 
     [Fact]
+    public void ReplaceFilePaths_IgnoresInvalidPathStrings()
+    {
+        var node = JsonNode.Parse("""{"FilePath":"\u0000"}""")!;
+
+        var replaced = YmmpxProjectJson.ReplaceFilePaths(
+            node,
+            new Dictionary<string, string> { ["invalid"] = "resources/invalid" });
+
+        Assert.Equal(0, replaced);
+        Assert.Equal("\u0000", node["FilePath"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ReplaceFilePaths_DoesNotMatchDifferentPathByFileName()
+    {
+        var node = JsonNode.Parse("""{"FilePath":"C:/other/same.wav"}""")!;
+
+        var replaced = YmmpxProjectJson.ReplaceFilePaths(
+            node,
+            new Dictionary<string, string>
+            {
+                ["C:/source/same.wav"] = "resources/same.wav"
+            });
+
+        Assert.Equal(0, replaced);
+        Assert.Equal("C:/other/same.wav", node["FilePath"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task CreatePackageAsync_RejectsProjectAsOutput()
     {
         using var workspace = new TemporaryDirectory();
@@ -308,14 +337,14 @@ public sealed class YmmpxPackageServiceTests
     }
 
     [Fact]
-    public async Task ExtractAndRestoreProject_AllowsHighlyCompressibleButLegitimateResources()
+    public async Task CreatePackageAsync_ProducesExtractablePackageForHighlyCompressibleResource()
     {
         using var workspace = new TemporaryDirectory();
         var resourcePath = Path.Combine(workspace.Path, "zeros.bin");
         var projectPath = Path.Combine(workspace.Path, "sample.ymmp");
         var packagePath = Path.Combine(workspace.Path, "package.ymmpx");
         var extractPath = Path.Combine(workspace.Path, "extract");
-        File.WriteAllBytes(resourcePath, new byte[10 * 1024 * 1024]);
+        WriteRepeatedFile(resourcePath, 128L * 1024 * 1024);
         File.WriteAllText(projectPath, JsonSerializer.Serialize(new { FilePath = resourcePath }));
 
         await YmmpxPackageService.CreatePackageAsync(
@@ -329,6 +358,24 @@ public sealed class YmmpxPackageServiceTests
 
         Assert.True(File.Exists(restoredResourcePath));
         Assert.StartsWith(Path.GetFullPath(extractPath), restoredResourcePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ExtractAndRestoreProject_RejectsAlternateDataStreamEntry()
+    {
+        using var workspace = new TemporaryDirectory();
+        var packagePath = Path.Combine(workspace.Path, "ads.ymmpx");
+        var extractPath = Path.Combine(workspace.Path, "extract");
+        CreateArchive(packagePath, archive =>
+        {
+            WriteEntry(archive, "project.ymmp", "{}");
+            WriteEntry(archive, "resources/file.txt:stream", "hidden");
+        });
+
+        Assert.Throws<InvalidDataException>(() =>
+            YmmpxPackageService.ExtractAndRestoreProject(packagePath, extractPath));
+
+        Assert.False(Directory.Exists(extractPath));
     }
 
     [Fact]
@@ -436,6 +483,18 @@ public sealed class YmmpxPackageServiceTests
     }
 
     [Fact]
+    public void GetAvailableFilePath_SkipsExistingDirectory()
+    {
+        using var workspace = new TemporaryDirectory();
+        var desiredPath = Path.Combine(workspace.Path, "sample.txt");
+        Directory.CreateDirectory(desiredPath);
+
+        var result = YmmpxPackageService.GetAvailableFilePath(desiredPath);
+
+        Assert.Equal(Path.Combine(workspace.Path, "sample_1.txt"), result);
+    }
+
+    [Fact]
     public void GetAvailableDirectoryPath_ReturnsFirstUnusedName()
     {
         using var workspace = new TemporaryDirectory();
@@ -446,6 +505,18 @@ public sealed class YmmpxPackageServiceTests
         var result = YmmpxPackageService.GetAvailableDirectoryPath(desiredPath);
 
         Assert.Equal($"{desiredPath}_2", result);
+    }
+
+    [Fact]
+    public void GetAvailableDirectoryPath_SkipsExistingFile()
+    {
+        using var workspace = new TemporaryDirectory();
+        var desiredPath = Path.Combine(workspace.Path, "sample");
+        File.WriteAllText(desiredPath, "existing");
+
+        var result = YmmpxPackageService.GetAvailableDirectoryPath(desiredPath);
+
+        Assert.Equal($"{desiredPath}_1", result);
     }
 
     [Fact]
@@ -536,6 +607,17 @@ public sealed class YmmpxPackageServiceTests
     {
         var entry = archive.CreateEntry(name, CompressionLevel.SmallestSize);
         using var stream = entry.Open();
+        var buffer = new byte[1024 * 1024];
+        for (long written = 0; written < length; written += buffer.Length)
+        {
+            var count = (int)Math.Min(buffer.Length, length - written);
+            stream.Write(buffer, 0, count);
+        }
+    }
+
+    private static void WriteRepeatedFile(string path, long length)
+    {
+        using var stream = File.Create(path);
         var buffer = new byte[1024 * 1024];
         for (long written = 0; written < length; written += buffer.Length)
         {

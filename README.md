@@ -65,7 +65,7 @@ bool RemoveUiSettings(JsonNode node)
 ```
 
 - `FindFilePaths`: JSON から `FilePath` を再帰列挙
-- `ReplaceFilePaths`: `linkMap` を使って `FilePath` を置換
+- `ReplaceFilePaths`: `linkMap` と完全一致または正規化一致する `FilePath` を置換
 - `RemoveUiSettings`: ルートの `LayoutXml`, `ToolStates` を削除
 
 ### 補助 API
@@ -77,8 +77,8 @@ string GetAvailableFilePath(string desiredPath)
 ```
 
 - `LoadLinkMap`: `links.json` 優先、次に `manifest.json`、最後に `links.txt` を互換読み込み
-- `GetAvailableDirectoryPath`: 既存時に `_1`, `_2`... を付けて空きパス返却
-- `GetAvailableFilePath`: 既存時に `_1`, `_2`... を付けて空きファイル名返却
+- `GetAvailableDirectoryPath`: 同名のファイルまたはフォルダが存在する場合、`_1`, `_2`... を付けて空きパスを返却
+- `GetAvailableFilePath`: 同名のファイルまたはフォルダが存在する場合、`_1`, `_2`... を付けて空きファイル名を返却
 
 ## 使用例
 

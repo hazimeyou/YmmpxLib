@@ -21,5 +21,8 @@
 - [ ] verify restoration works with `links.json`, `manifest.json`, or `links.txt`
 - [ ] verify preexisting extraction files and link definitions are not modified or consumed
 - [ ] verify excessive compression ratio archives are rejected
+- [ ] verify highly compressible generated packages can be extracted
+- [ ] verify NTFS alternate data stream entry names are rejected
+- [ ] verify available-path helpers avoid both files and directories
 - [ ] verify generated public XML documentation contains no mojibake
 - [ ] verify Release build completes with zero warnings
