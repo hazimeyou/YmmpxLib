@@ -68,21 +68,16 @@ public static class YmmpxProjectJson
     /// <returns>置換できたパス数。</returns>
     public static int ReplaceFilePaths(JsonNode node, IReadOnlyDictionary<string, string> linkMap)
     {
-        // パス表記ゆれを吸収できるよう正規化キー込みの辞書を作る。
-        var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var lookup = new Dictionary<string, string>(GetPathComparer());
         foreach (var item in linkMap)
         {
             if (string.IsNullOrWhiteSpace(item.Key))
                 continue;
 
-            normalized[item.Key] = item.Value;
-
-            var normalizedKey = TryNormalizePath(item.Key);
-            if (!string.IsNullOrWhiteSpace(normalizedKey))
-                normalized[normalizedKey] = item.Value;
+            lookup[NormalizePathKey(item.Key)] = item.Value;
         }
 
-        return ReplaceFilePathsCore(node, normalized);
+        return ReplaceFilePathsCore(node, lookup);
     }
 
     /// <summary>
@@ -112,10 +107,10 @@ public static class YmmpxProjectJson
                 {
                     if (!string.IsNullOrWhiteSpace(path))
                     {
-                        // 完全一致または正規化一致したパスだけを解決する。
+                        // 完全一致したパスだけを解決する。
                         if (TryResolveMappedPath(linkMap, path, out var resolved))
                         {
-                            obj["FilePath"] = resolved;
+                            obj[item.Key] = resolved;
                             count++;
                         }
                     }
@@ -142,18 +137,10 @@ public static class YmmpxProjectJson
     {
         mappedPath = string.Empty;
 
-        // 1) キーの完全一致。
-        if (linkMap.TryGetValue(path, out var directMappedPath))
+        var normalizedPath = NormalizePathKey(path);
+        if (linkMap.TryGetValue(normalizedPath, out var directMappedPath))
         {
             mappedPath = directMappedPath;
-            return true;
-        }
-
-        // 2) パス正規化後の一致。
-        var normalizedPath = TryNormalizePath(path);
-        if (!string.IsNullOrWhiteSpace(normalizedPath) && linkMap.TryGetValue(normalizedPath, out var normalizedMappedPath))
-        {
-            mappedPath = normalizedMappedPath;
             return true;
         }
 
@@ -177,7 +164,7 @@ public static class YmmpxProjectJson
                         var converted = pathConverter(path);
                         if (!string.IsNullOrWhiteSpace(converted) && !string.Equals(path, converted, StringComparison.Ordinal))
                         {
-                            obj["FilePath"] = converted;
+                            obj[item.Key] = converted;
                             count++;
                         }
                     }
@@ -198,6 +185,17 @@ public static class YmmpxProjectJson
         }
 
         return count;
+    }
+
+    private static string NormalizePathKey(string path)
+    {
+        // 相対パスは壊さず、区切り差だけを吸収する。
+        return path.Replace('\\', '/').Trim();
+    }
+
+    private static StringComparer GetPathComparer()
+    {
+        return OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     }
 
     private static string? TryNormalizePath(string path)

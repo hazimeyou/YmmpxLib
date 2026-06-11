@@ -106,6 +106,53 @@ public sealed class YmmpxPackageServiceTests
     }
 
     [Fact]
+    public void ReplaceFilePaths_PreservesPropertyNameCasing()
+    {
+        var node = JsonNode.Parse("""{"filepath":"C:/source/replace.wav"}""")!;
+
+        var replaced = YmmpxProjectJson.ReplaceFilePaths(
+            node,
+            new Dictionary<string, string>
+            {
+                ["C:/source/replace.wav"] = "resources/replace.wav"
+            });
+
+        Assert.Equal(1, replaced);
+        Assert.Null(node["FilePath"]);
+        Assert.Equal("resources/replace.wav", node["filepath"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ReplaceFilePathsForPackaging_PreservesPropertyNameCasing()
+    {
+        var node = JsonNode.Parse("""{"filepath":"C:/source/replace.wav"}""")!;
+
+        var replaced = YmmpxProjectJson.ReplaceFilePathsForPackaging(
+            node,
+            path => path == "C:/source/replace.wav" ? "resources/replace.wav" : null);
+
+        Assert.Equal(1, replaced);
+        Assert.Null(node["FilePath"]);
+        Assert.Equal("resources/replace.wav", node["filepath"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ReplaceFilePaths_ResolvesSlashAndCaseVariants()
+    {
+        var node = JsonNode.Parse("""{"FilePath":"Resources\\a.txt"}""")!;
+
+        var replaced = YmmpxProjectJson.ReplaceFilePaths(
+            node,
+            new Dictionary<string, string>
+            {
+                ["resources/a.txt"] = "C:/work/extract/resources/a.txt"
+            });
+
+        Assert.Equal(1, replaced);
+        Assert.Equal("C:/work/extract/resources/a.txt", node["FilePath"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task CreatePackageAsync_RejectsProjectAsOutput()
     {
         using var workspace = new TemporaryDirectory();
@@ -185,8 +232,30 @@ public sealed class YmmpxPackageServiceTests
 
         Assert.Equal(1, result.ResourceCount);
         Assert.Single(result.FileMap);
+        Assert.Equal("resources/a.txt", result.FileMap["a.txt"]);
         using var archive = ZipFile.OpenRead(outputPath);
         Assert.Single(archive.Entries, x => x.FullName.StartsWith("resources/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CreatePackageAsync_RejectsOversizedProjectBeforeReading()
+    {
+        using var workspace = new TemporaryDirectory();
+        var projectPath = Path.Combine(workspace.Path, "huge.ymmp");
+        var outputPath = Path.Combine(workspace.Path, "huge.ymmpx");
+
+        using (var stream = new FileStream(projectPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            stream.SetLength(512L * 1024 * 1024 + 1);
+        }
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            YmmpxPackageService.CreatePackageAsync(
+                projectPath,
+                outputPath,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.False(File.Exists(outputPath));
     }
 
     [Fact]
@@ -211,6 +280,42 @@ public sealed class YmmpxPackageServiceTests
         Assert.Equal(1, result.ReplacedPathCount);
         Assert.True(File.Exists(restoredResourcePath));
         Assert.StartsWith(Path.GetFullPath(extractPath), restoredResourcePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PackageAndExtract_PreservesUnpackOnlyRelativePath()
+    {
+        using var workspace = new TemporaryDirectory();
+        var resourceDirectory = Path.Combine(workspace.Path, "other");
+        var resourcePath = Path.Combine(resourceDirectory, "a.txt");
+        var projectPath = Path.Combine(workspace.Path, "sample.ymmp");
+        var packagePath = Path.Combine(workspace.Path, "sample.ymmpx");
+        var extractPath = Path.Combine(workspace.Path, "extract");
+        var relativeExtractPath = Path.GetRelativePath(Environment.CurrentDirectory, extractPath);
+
+        Directory.CreateDirectory(resourceDirectory);
+        File.WriteAllText(resourcePath, "a");
+        File.WriteAllText(
+            projectPath,
+            JsonSerializer.Serialize(new
+            {
+                Existing = new { FilePath = "other/a.txt" },
+                Missing = new { FilePath = "a.txt" }
+            }));
+
+        await YmmpxPackageService.CreatePackageAsync(
+            projectPath,
+            packagePath,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var result = YmmpxPackageService.ExtractAndRestoreProject(packagePath, relativeExtractPath);
+        var restored = JsonNode.Parse(File.ReadAllText(result.ProjectFilePath))!;
+
+        Assert.Equal(relativeExtractPath, result.ExtractDirectory);
+        Assert.Equal(Path.Combine(relativeExtractPath, "sample.ymmp"), result.ProjectFilePath);
+        Assert.True(File.Exists(restored["Existing"]!["FilePath"]!.GetValue<string>()));
+        Assert.StartsWith(Path.GetFullPath(extractPath), restored["Existing"]!["FilePath"]!.GetValue<string>(), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("a.txt", restored["Missing"]!["FilePath"]!.GetValue<string>());
     }
 
     [Fact]
