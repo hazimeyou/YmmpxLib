@@ -440,6 +440,27 @@ public sealed class YmmpxPackageServiceTests
     }
 
     [Fact]
+    public void ExtractAndRestoreProject_DoesNotDeletePreexistingEmptyDirectoriesForDirectoryEntries()
+    {
+        using var workspace = new TemporaryDirectory();
+        var packagePath = Path.Combine(workspace.Path, "broken.ymmpx");
+        var extractPath = Path.Combine(workspace.Path, "extract");
+        var resourceDirectory = Path.Combine(extractPath, "resources");
+
+        Directory.CreateDirectory(resourceDirectory);
+        CreateArchive(packagePath, archive =>
+        {
+            archive.CreateEntry("resources/");
+            WriteEntry(archive, "project.ymmp", "{");
+        });
+
+        Assert.ThrowsAny<JsonException>(() =>
+            YmmpxPackageService.ExtractAndRestoreProject(packagePath, extractPath));
+
+        Assert.True(Directory.Exists(resourceDirectory));
+    }
+
+    [Fact]
     public void ExtractAndRestoreProject_IgnoresMalformedLinkPaths()
     {
         using var workspace = new TemporaryDirectory();
@@ -458,6 +479,37 @@ public sealed class YmmpxPackageServiceTests
 
         Assert.True(File.Exists(result.ProjectFilePath));
         Assert.Equal(0, result.ReplacedPathCount);
+    }
+
+    [Fact]
+    public async Task CreatePackageAsync_RejectsPackagesThatWouldExceedEntryCountLimit()
+    {
+        using var workspace = new TemporaryDirectory();
+        var projectPath = Path.Combine(workspace.Path, "sample.ymmp");
+        var outputPath = Path.Combine(workspace.Path, "sample.ymmpx");
+        var resourcePaths = new List<string>();
+
+        for (var i = 0; i < 9_998; i++)
+        {
+            var resourcePath = Path.Combine(workspace.Path, $"r{i:D4}.txt");
+            File.WriteAllText(resourcePath, string.Empty);
+            resourcePaths.Add(resourcePath);
+        }
+
+        File.WriteAllText(
+            projectPath,
+            JsonSerializer.Serialize(new
+            {
+                Items = resourcePaths.Select(path => new { FilePath = path }).ToArray()
+            }));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            YmmpxPackageService.CreatePackageAsync(
+                projectPath,
+                outputPath,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.False(File.Exists(outputPath));
     }
 
     [Fact]

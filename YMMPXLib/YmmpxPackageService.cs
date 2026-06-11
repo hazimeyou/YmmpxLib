@@ -1,5 +1,6 @@
 ﻿using System.IO.Compression;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -178,6 +179,12 @@ public static class YmmpxPackageService
                 projectEntryName = "project.ymmp";
             if (!projectEntryName.EndsWith(".ymmp", StringComparison.OrdinalIgnoreCase))
                 projectEntryName = Path.ChangeExtension(projectEntryName, ".ymmp");
+
+            ValidatePackageContents(
+                projectEntryName,
+                projectTextForPackage,
+                linksJsonFile,
+                filesToPackage.Keys);
 
             // 完成するまで一時ファイルへ書き込み、既存出力を失わないようにする。
             using (var zip = ZipFile.Open(temporaryOutputPath, ZipArchiveMode.Create))
@@ -531,9 +538,7 @@ public static class YmmpxPackageService
                 var destinationPath = Path.GetFullPath(Path.Combine(extractDirectory, entry.FullName));
                 if (string.IsNullOrEmpty(entry.Name))
                 {
-                    EnsureDirectoryPathIsSafe(destinationPath, baseDirectory);
-                    Directory.CreateDirectory(destinationPath);
-                    extractedDirectories.Add(destinationPath);
+                    CreateDirectoryForExtraction(destinationPath, baseDirectory, extractedDirectories);
                     continue;
                 }
 
@@ -693,6 +698,61 @@ public static class YmmpxPackageService
                 // 先祖ディレクトリに残ったファイルや他プロセスの利用は無視する。
             }
         }
+    }
+
+    private static void ValidatePackageContents(
+        string projectEntryName,
+        string projectTextForPackage,
+        string linksJsonFile,
+        IEnumerable<string> resourcePaths)
+    {
+        var resourcePathList = resourcePaths as IReadOnlyCollection<string> ?? resourcePaths.ToArray();
+        var entryCount = checked(resourcePathList.Count + 3);
+        if (entryCount > MaxArchiveEntryCount)
+            throw new InvalidOperationException($"Archive would contain too many entries: {entryCount}.");
+
+        long totalLength = 0;
+        ValidatePackageEntryLength(
+            "project JSON",
+            Encoding.UTF8.GetByteCount(projectTextForPackage),
+            MaxProjectFileLength,
+            ref totalLength);
+        ValidatePackageEntryLength(
+            "_ymmpx_project_path.txt",
+            Encoding.UTF8.GetByteCount(projectEntryName),
+            MaxMarkerFileLength,
+            ref totalLength);
+        ValidatePackageEntryLength(
+            "links.json",
+            new FileInfo(linksJsonFile).Length,
+            MaxLinkFileLength,
+            ref totalLength);
+
+        foreach (var path in resourcePathList)
+        {
+            ValidatePackageEntryLength(
+                Path.GetFileName(path),
+                new FileInfo(path).Length,
+                MaxArchiveEntryLength,
+                ref totalLength);
+        }
+
+        if (totalLength > MaxArchiveTotalLength)
+            throw new InvalidOperationException($"Archive would expand beyond the allowed total size: {totalLength} bytes.");
+    }
+
+    private static void ValidatePackageEntryLength(
+        string entryName,
+        long entryLength,
+        long entryLengthLimit,
+        ref long totalLength)
+    {
+        if (entryLength > entryLengthLimit)
+            throw new InvalidOperationException($"Archive entry is too large: {entryName}.");
+
+        totalLength = checked(totalLength + entryLength);
+        if (totalLength > MaxArchiveTotalLength)
+            throw new InvalidOperationException($"Archive would expand beyond the allowed total size: {totalLength} bytes.");
     }
 
     private static void CreateDirectoryForExtraction(
