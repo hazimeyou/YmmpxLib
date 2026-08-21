@@ -810,6 +810,151 @@ public sealed class YmmpxPackageServiceTests
         Assert.Empty(map);
     }
 
+    [Fact]
+    public async Task CreatePackageAsync_PackagesOnlyVideoItemPngSequenceAndRestoresRepresentativePath()
+    {
+        using var workspace = new TemporaryDirectory();
+        var projectPath = Path.Combine(workspace.Path, "sample.ymmp");
+        var packagePath = Path.Combine(workspace.Path, "sample.ymmpx");
+        var extractPath = Path.Combine(workspace.Path, "extract");
+        WriteTestFiles(workspace.Path, "無題_0.png", "無題_1.png", "無題_2.png", "thumbnail.png", "logo.png");
+        File.WriteAllText(projectPath, CreateProjectJson(("VideoItem", Path.Combine(workspace.Path, "無題_0.png"))));
+
+        var result = await YmmpxPackageService.CreatePackageAsync(
+            projectPath,
+            packagePath,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, result.ResourceCount);
+        Assert.Equal(new[]
+        {
+            "resources/sequence_1/無題_0.png",
+            "resources/sequence_1/無題_1.png",
+            "resources/sequence_1/無題_2.png"
+        }, GetResourceEntryNames(packagePath));
+
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(packagePath, extractPath);
+        var restored = JsonNode.Parse(File.ReadAllText(unpacked.ProjectFilePath))!;
+        var representativePath = restored["Items"]![0]!["FilePath"]!.GetValue<string>();
+
+        Assert.True(File.Exists(representativePath));
+        Assert.Equal(new[] { "無題_0.png", "無題_1.png", "無題_2.png" },
+            Directory.EnumerateFiles(Path.GetDirectoryName(representativePath)!)
+                .Select(Path.GetFileName)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray());
+    }
+
+    [Fact]
+    public async Task CreatePackageAsync_DoesNotTreatImageItemPngAsSequence()
+    {
+        using var workspace = new TemporaryDirectory();
+        var projectPath = Path.Combine(workspace.Path, "sample.ymmp");
+        var packagePath = Path.Combine(workspace.Path, "sample.ymmpx");
+        WriteTestFiles(workspace.Path, "無題_0.png", "無題_1.png", "無題_2.png");
+        File.WriteAllText(projectPath, CreateProjectJson(("ImageItem", Path.Combine(workspace.Path, "無題_0.png"))));
+
+        var result = await YmmpxPackageService.CreatePackageAsync(
+            projectPath,
+            packagePath,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, result.ResourceCount);
+        Assert.Equal(new[] { "resources/無題_0.png" }, GetResourceEntryNames(packagePath));
+    }
+
+    [Fact]
+    public async Task CreatePackageAsync_DeduplicatesAndSeparatesVideoItemPngSequences()
+    {
+        using var workspace = new TemporaryDirectory();
+        var projectPath = Path.Combine(workspace.Path, "sample.ymmp");
+        var packagePath = Path.Combine(workspace.Path, "sample.ymmpx");
+        WriteTestFiles(workspace.Path, "image_0000.png", "image_0001.png", "image_0002.png", "A_0.png", "A_1.png", "B_0.png", "B_1.png");
+        File.WriteAllText(projectPath, CreateProjectJson(
+            ("VideoItem", Path.Combine(workspace.Path, "image_0000.png")),
+            ("VideoItem", Path.Combine(workspace.Path, "image_0000.png")),
+            ("VideoItem", Path.Combine(workspace.Path, "A_0.png")),
+            ("VideoItem", Path.Combine(workspace.Path, "B_0.png"))));
+
+        var result = await YmmpxPackageService.CreatePackageAsync(
+            projectPath,
+            packagePath,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(7, result.ResourceCount);
+        Assert.Equal(7, GetResourceEntryNames(packagePath).Count);
+        Assert.Contains("resources/sequence_1/image_0000.png", GetResourceEntryNames(packagePath));
+        Assert.Contains("resources/sequence_2/A_0.png", GetResourceEntryNames(packagePath));
+        Assert.Contains("resources/sequence_3/B_0.png", GetResourceEntryNames(packagePath));
+    }
+
+    [Fact]
+    public async Task CreatePackageAsync_KeepsSameNamedSequencesFromDifferentDirectoriesSeparate()
+    {
+        using var workspace = new TemporaryDirectory();
+        var firstDirectory = Path.Combine(workspace.Path, "A");
+        var secondDirectory = Path.Combine(workspace.Path, "B");
+        var projectPath = Path.Combine(workspace.Path, "sample.ymmp");
+        var packagePath = Path.Combine(workspace.Path, "sample.ymmpx");
+        var extractPath = Path.Combine(workspace.Path, "extract");
+        Directory.CreateDirectory(firstDirectory);
+        Directory.CreateDirectory(secondDirectory);
+        WriteTestFiles(firstDirectory, "image_0.png", "image_1.png");
+        WriteTestFiles(secondDirectory, "image_0.png", "image_1.png");
+        File.WriteAllText(projectPath, CreateProjectJson(
+            ("VideoItem", Path.Combine(firstDirectory, "image_0.png")),
+            ("VideoItem", Path.Combine(secondDirectory, "image_0.png"))));
+
+        await YmmpxPackageService.CreatePackageAsync(
+            projectPath,
+            packagePath,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[]
+        {
+            "resources/sequence_1/image_0.png",
+            "resources/sequence_1/image_1.png",
+            "resources/sequence_2/image_0.png",
+            "resources/sequence_2/image_1.png"
+        }, GetResourceEntryNames(packagePath));
+
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(packagePath, extractPath);
+        var restored = JsonNode.Parse(File.ReadAllText(unpacked.ProjectFilePath))!;
+        var firstPath = restored["Items"]![0]!["FilePath"]!.GetValue<string>();
+        var secondPath = restored["Items"]![1]!["FilePath"]!.GetValue<string>();
+        Assert.NotEqual(Path.GetDirectoryName(firstPath), Path.GetDirectoryName(secondPath));
+        Assert.True(File.Exists(firstPath));
+        Assert.True(File.Exists(secondPath));
+    }
+
+    private static string CreateProjectJson(params (string TypeName, string FilePath)[] items)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            Items = items.Select(item => new Dictionary<string, string>
+            {
+                ["$type"] = $"YukkuriMovieMaker.Project.Items.{item.TypeName}, YukkuriMovieMaker",
+                ["FilePath"] = item.FilePath
+            })
+        });
+    }
+
+    private static IReadOnlyList<string> GetResourceEntryNames(string packagePath)
+    {
+        using var archive = ZipFile.OpenRead(packagePath);
+        return archive.Entries
+            .Select(entry => entry.FullName)
+            .Where(name => name.StartsWith("resources/", StringComparison.Ordinal))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static void WriteTestFiles(string directory, params string[] fileNames)
+    {
+        foreach (var fileName in fileNames)
+            File.WriteAllBytes(Path.Combine(directory, fileName), [0]);
+    }
+
     private static void CreateArchive(string path, Action<ZipArchive> configure)
     {
         using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
