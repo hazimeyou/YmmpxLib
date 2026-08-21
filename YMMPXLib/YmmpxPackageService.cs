@@ -1083,19 +1083,18 @@ public static class YmmpxPackageService
 
         var directory = Path.GetDirectoryName(representativePath);
         var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(representativePath);
-        if (string.IsNullOrEmpty(directory) || !TryGetSequenceFileNameParts(fileNameWithoutExtension, out var prefix, out var numberWidth))
+        if (string.IsNullOrEmpty(directory) || !TryGetSequenceFileNameParts(fileNameWithoutExtension, out var prefix))
             return Array.Empty<ResourceCandidate>();
 
         try
         {
-            var groupKey = $"{directory}\u001F{prefix}\u001F{numberWidth}\u001F.png";
+            var groupKey = $"{directory}\u001F{prefix}\u001F.png";
             var candidates = Directory.EnumerateFiles(directory)
                 .Where(path => Path.GetExtension(path).Equals(".png", StringComparison.OrdinalIgnoreCase))
                 .Where(path =>
                 {
                     var name = Path.GetFileNameWithoutExtension(path);
-                    return TryGetSequenceFileNameParts(name, out var candidatePrefix, out var candidateWidth) &&
-                        candidateWidth == numberWidth &&
+                    return TryGetSequenceFileNameParts(name, out var candidatePrefix) &&
                         string.Equals(candidatePrefix, prefix, GetPathComparison());
                 })
                 .Select(path => new ResourceCandidate(path, Path.GetFullPath(path), groupKey))
@@ -1114,18 +1113,16 @@ public static class YmmpxPackageService
         }
     }
 
-    private static bool TryGetSequenceFileNameParts(string fileNameWithoutExtension, out string prefix, out int numberWidth)
+    private static bool TryGetSequenceFileNameParts(string fileNameWithoutExtension, out string prefix)
     {
         var match = SequenceFileNamePattern.Match(fileNameWithoutExtension);
         if (!match.Success)
         {
             prefix = string.Empty;
-            numberWidth = 0;
             return false;
         }
 
         prefix = match.Groups["prefix"].Value;
-        numberWidth = match.Groups["number"].Length;
         return true;
     }
 

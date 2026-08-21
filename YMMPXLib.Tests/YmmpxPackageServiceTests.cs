@@ -851,8 +851,8 @@ public sealed class YmmpxPackageServiceTests
         using var workspace = new TemporaryDirectory();
         var projectPath = Path.Combine(workspace.Path, "sample.ymmp");
         var packagePath = Path.Combine(workspace.Path, "sample.ymmpx");
-        WriteTestFiles(workspace.Path, "無題_0.png", "無題_1.png", "無題_2.png");
-        File.WriteAllText(projectPath, CreateProjectJson(("ImageItem", Path.Combine(workspace.Path, "無題_0.png"))));
+        WriteNumberedPngFiles(workspace.Path, "frame_", 1, 110);
+        File.WriteAllText(projectPath, CreateProjectJson(("ImageItem", Path.Combine(workspace.Path, "frame_1.png"))));
 
         var result = await YmmpxPackageService.CreatePackageAsync(
             projectPath,
@@ -860,7 +860,48 @@ public sealed class YmmpxPackageServiceTests
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.ResourceCount);
-        Assert.Equal(new[] { "resources/無題_0.png" }, GetResourceEntryNames(packagePath));
+        Assert.Equal(new[] { "resources/frame_1.png" }, GetResourceEntryNames(packagePath));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(0)]
+    public async Task CreatePackageAsync_PackagesPngSequenceAcrossNumberWidthBoundaries(int firstFrameNumber)
+    {
+        const int frameCount = 110;
+        using var workspace = new TemporaryDirectory();
+        var projectPath = Path.Combine(workspace.Path, "sample.ymmp");
+        var packagePath = Path.Combine(workspace.Path, "sample.ymmpx");
+        var extractPath = Path.Combine(workspace.Path, "extract");
+        WriteNumberedPngFiles(workspace.Path, "frame_", firstFrameNumber, frameCount);
+        WriteTestFiles(workspace.Path, "thumbnail.png", "logo.png");
+        var representativeFileName = $"frame_{firstFrameNumber}.png";
+        File.WriteAllText(projectPath, CreateProjectJson(("VideoItem", Path.Combine(workspace.Path, representativeFileName))));
+
+        var result = await YmmpxPackageService.CreatePackageAsync(
+            projectPath,
+            packagePath,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var entries = GetResourceEntryNames(packagePath);
+        Assert.Equal(frameCount, result.ResourceCount);
+        Assert.Equal(frameCount, entries.Count);
+        Assert.DoesNotContain("resources/sequence_1/thumbnail.png", entries);
+        Assert.DoesNotContain("resources/sequence_1/logo.png", entries);
+        foreach (var frameNumber in Enumerable.Range(firstFrameNumber, frameCount))
+            Assert.Contains($"resources/sequence_1/frame_{frameNumber}.png", entries);
+
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(packagePath, extractPath);
+        var restored = JsonNode.Parse(File.ReadAllText(unpacked.ProjectFilePath))!;
+        var representativePath = restored["Items"]![0]!["FilePath"]!.GetValue<string>();
+        var extractedFileNames = Directory.EnumerateFiles(Path.GetDirectoryName(representativePath)!)
+            .Select(Path.GetFileName)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.True(File.Exists(representativePath));
+        Assert.Equal(frameCount, extractedFileNames.Count);
+        foreach (var frameNumber in Enumerable.Range(firstFrameNumber, frameCount))
+            Assert.Contains($"frame_{frameNumber}.png", extractedFileNames);
     }
 
     [Fact]
@@ -953,6 +994,12 @@ public sealed class YmmpxPackageServiceTests
     {
         foreach (var fileName in fileNames)
             File.WriteAllBytes(Path.Combine(directory, fileName), [0]);
+    }
+
+    private static void WriteNumberedPngFiles(string directory, string prefix, int firstFrameNumber, int frameCount)
+    {
+        foreach (var frameNumber in Enumerable.Range(firstFrameNumber, frameCount))
+            File.WriteAllBytes(Path.Combine(directory, $"{prefix}{frameNumber}.png"), [0]);
     }
 
     private static void CreateArchive(string path, Action<ZipArchive> configure)
