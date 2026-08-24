@@ -3,4 +3,7 @@
   <Project Path="YMMPXLib.Tests/YMMPXLib.Tests.csproj" />
   <Project Path="YMMPXLibPlugin/YmmpxLibPlugin.csproj" />
   <Project Path="YMMPXCli/YMMPXCli.csproj" />
+  <Project Path="YmmpxLibV2/YmmpxLibV2.csproj" />
+  <Project Path="YmmpxLibV2Plugin/YmmpxLibV2Plugin.csproj" />
+  <Project Path="YmmpxLibV2.Tests/YmmpxLibV2.Tests.csproj" />
 </Solution>
