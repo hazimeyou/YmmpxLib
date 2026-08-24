@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace YmmpxLib;
 
@@ -66,11 +67,13 @@ public static class YmmpxPackageService
         using var document = JsonDocument.Parse(projectText);
         var resourceCandidates = YmmpxProjectJson
             .FindFilePaths(document.RootElement)
-            .Select(originalPath => new
-            {
-                OriginalPath = originalPath,
-                ResolvedPath = NormalizePath(projectDirectory, originalPath),
-            })
+            .Select(originalPath => new ResourceCandidate(
+                originalPath,
+                NormalizePath(projectDirectory, originalPath),
+                null))
+            .Concat(YmmpxProjectJson
+                .FindVideoItemFilePaths(document.RootElement)
+                .SelectMany(originalPath => FindPngSequenceFiles(projectDirectory, originalPath)))
             .Where(x =>
                 !string.IsNullOrWhiteSpace(x.ResolvedPath) &&
                 File.Exists(x.ResolvedPath!) &&
@@ -80,7 +83,8 @@ public static class YmmpxPackageService
 
         var resourceEntries = resourceCandidates
             .GroupBy(x => x.ResolvedPath!, GetPathComparer())
-            .Select(group => group.First())
+            // ImageItem 等の通常参照と重なった場合も、VideoItem の連番配置を優先する。
+            .Select(group => group.FirstOrDefault(x => x.SequenceGroupKey is not null) ?? group.First())
             .ToList();
 
         if (resourceEntries.Any(x => string.Equals(x.ResolvedPath!, normalizedOutputPath, GetPathComparison())))
@@ -92,13 +96,31 @@ public static class YmmpxPackageService
         var publicFileMap = new Dictionary<string, string>(StringComparer.Ordinal);
         var linksManifestMap = new Dictionary<string, string>(StringComparer.Ordinal);
         var filesToPackage = new Dictionary<string, string>(GetPathComparer());
+        var sequenceDirectoryByGroup = new Dictionary<string, string>(GetPathComparer());
+        var usedSequenceDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in resourceEntries)
         {
             var fileName = Path.GetFileName(entry.ResolvedPath!);
-            var uniqueFileName = GetUniqueFileName(fileName, usedNames);
-            var packagedPath = $"resources/{uniqueFileName}";
-            packagedNameByResolvedPath[entry.ResolvedPath!] = uniqueFileName;
-            publicFileMap[uniqueFileName] = packagedPath;
+            string packagedPath;
+            if (entry.SequenceGroupKey is not null)
+            {
+                if (!sequenceDirectoryByGroup.TryGetValue(entry.SequenceGroupKey, out var sequenceDirectory))
+                {
+                    sequenceDirectory = GetUniqueSequenceDirectoryName(usedSequenceDirectories, usedNames);
+                    sequenceDirectoryByGroup[entry.SequenceGroupKey] = sequenceDirectory;
+                }
+
+                // 連番は同じフォルダで元のファイル名を維持し、YMM4 の解決規則を壊さない。
+                packagedPath = $"resources/{sequenceDirectory}/{fileName}";
+            }
+            else
+            {
+                var uniqueFileName = GetUniqueFileName(fileName, usedNames);
+                packagedPath = $"resources/{uniqueFileName}";
+            }
+
+            packagedNameByResolvedPath[entry.ResolvedPath!] = packagedPath;
+            publicFileMap[packagedPath["resources/".Length..]] = packagedPath;
             linksManifestMap[packagedPath] = packagedPath;
             filesToPackage[entry.ResolvedPath!] = packagedPath;
         }
@@ -114,8 +136,8 @@ public static class YmmpxPackageService
             YmmpxProjectJson.ReplaceFilePathsForPackaging(projectNode, sourcePath =>
             {
                 var resolved = NormalizePath(projectDirectory, sourcePath);
-                return resolved is not null && packagedNameByResolvedPath.TryGetValue(resolved, out var packagedName)
-                    ? $"resources/{packagedName}"
+                return resolved is not null && packagedNameByResolvedPath.TryGetValue(resolved, out var packagedPath)
+                    ? packagedPath
                     : null;
             });
 
@@ -1025,6 +1047,15 @@ public static class YmmpxPackageService
         IReadOnlySet<string> Files,
         IReadOnlySet<string> Directories);
 
+    private sealed record ResourceCandidate(
+        string OriginalPath,
+        string? ResolvedPath,
+        string? SequenceGroupKey);
+
+    private static readonly Regex SequenceFileNamePattern = new(
+        "^(?<prefix>.*?)(?<number>\\d+)$",
+        RegexOptions.CultureInvariant);
+
     private static string GetUniqueFileName(string fileName, ISet<string> usedNames)
     {
         var baseName = Path.GetFileNameWithoutExtension(fileName);
@@ -1039,6 +1070,72 @@ public static class YmmpxPackageService
         }
 
         return candidate;
+    }
+
+    private static IEnumerable<ResourceCandidate> FindPngSequenceFiles(string projectDirectory, string originalPath)
+    {
+        var representativePath = NormalizePath(projectDirectory, originalPath);
+        if (representativePath is null ||
+            !Path.GetExtension(representativePath).Equals(".png", StringComparison.OrdinalIgnoreCase))
+        {
+            return Array.Empty<ResourceCandidate>();
+        }
+
+        var directory = Path.GetDirectoryName(representativePath);
+        var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(representativePath);
+        if (string.IsNullOrEmpty(directory) || !TryGetSequenceFileNameParts(fileNameWithoutExtension, out var prefix))
+            return Array.Empty<ResourceCandidate>();
+
+        try
+        {
+            var groupKey = $"{directory}\u001F{prefix}\u001F.png";
+            var candidates = Directory.EnumerateFiles(directory)
+                .Where(path => Path.GetExtension(path).Equals(".png", StringComparison.OrdinalIgnoreCase))
+                .Where(path =>
+                {
+                    var name = Path.GetFileNameWithoutExtension(path);
+                    return TryGetSequenceFileNameParts(name, out var candidatePrefix) &&
+                        string.Equals(candidatePrefix, prefix, GetPathComparison());
+                })
+                .Select(path => new ResourceCandidate(path, Path.GetFullPath(path), groupKey))
+                .ToList();
+
+            // 単独画像は連番として扱わず、通常の FilePath 処理を維持する。
+            return candidates.Count >= 2 ? candidates : Array.Empty<ResourceCandidate>();
+        }
+        catch (IOException)
+        {
+            return Array.Empty<ResourceCandidate>();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Array.Empty<ResourceCandidate>();
+        }
+    }
+
+    private static bool TryGetSequenceFileNameParts(string fileNameWithoutExtension, out string prefix)
+    {
+        var match = SequenceFileNamePattern.Match(fileNameWithoutExtension);
+        if (!match.Success)
+        {
+            prefix = string.Empty;
+            return false;
+        }
+
+        prefix = match.Groups["prefix"].Value;
+        return true;
+    }
+
+    private static string GetUniqueSequenceDirectoryName(ISet<string> usedDirectories, ISet<string> usedFileNames)
+    {
+        var suffix = 1;
+        while (usedFileNames.Contains($"sequence_{suffix}") || !usedDirectories.Add($"sequence_{suffix}"))
+            suffix++;
+
+        var directoryName = $"sequence_{suffix}";
+        // resources/sequence_1 という通常ファイルとの Zip エントリ衝突も防ぐ。
+        usedFileNames.Add(directoryName);
+        return directoryName;
     }
     private static async Task CopyFileToEntryWithProgressAsync(
         ZipArchive archive,

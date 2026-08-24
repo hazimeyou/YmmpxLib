@@ -63,6 +63,45 @@ public static class YmmpxProjectJson
     }
 
     /// <summary>
+    /// YMM4 の VideoItem 自身が持つ <c>FilePath</c> を列挙します。
+    /// </summary>
+    /// <remarks>
+    /// VideoItem の子オブジェクトにある FilePath は対象にしません。連番画像の判定は、
+    /// 動画アイテムの代表ファイルだけに限定する必要があるためです。
+    /// </remarks>
+    internal static IEnumerable<string> FindVideoItemFilePaths(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (IsVideoItem(element) &&
+                element.TryGetProperty("FilePath", out var filePath) &&
+                filePath.ValueKind == JsonValueKind.String)
+            {
+                var path = filePath.GetString();
+                if (!string.IsNullOrWhiteSpace(path))
+                    yield return path;
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                foreach (var childPath in FindVideoItemFilePaths(property.Value))
+                    yield return childPath;
+            }
+
+            yield break;
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                foreach (var childPath in FindVideoItemFilePaths(item))
+                    yield return childPath;
+            }
+        }
+    }
+
+    /// <summary>
     /// JSON 内の <c>FilePath</c> を対応マップに従って置換します。
     /// </summary>
     /// <returns>置換できたパス数。</returns>
@@ -145,6 +184,15 @@ public static class YmmpxProjectJson
         }
 
         return false;
+    }
+
+    private static bool IsVideoItem(JsonElement element)
+    {
+        return element.TryGetProperty("$type", out var type) &&
+            type.ValueKind == JsonValueKind.String &&
+            type.GetString()?.StartsWith(
+                "YukkuriMovieMaker.Project.Items.VideoItem,",
+                StringComparison.Ordinal) == true;
     }
 
     private static int ReplaceFilePathsForPackagingCore(JsonNode node, Func<string, string?> pathConverter)
