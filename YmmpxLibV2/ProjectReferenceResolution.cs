@@ -10,6 +10,10 @@ public sealed record ProjectResourceReference(string OriginalReference, string P
 /// <summary>Creates format-independent project references from a loaded legacy package.</summary>
 public static class ProjectResourceReferenceMapper
 {
+    /// <summary>Returns reader-provided references, or converts normalized legacy links when needed.</summary>
+    public static IReadOnlyList<ProjectResourceReference> FromPackage(LoadedYmmpxPackage package) =>
+        package.ProjectReferences.Count > 0 ? package.ProjectReferences : FromLegacyPackage(package);
+
     /// <summary>
     /// Converts normalized legacy links to common references and excludes links whose resource is absent.
     /// </summary>

@@ -364,7 +364,11 @@ public sealed record LoadedYmmpxPackage(
     LoadedYmmpxSourceFormat SourceFormat,
     LoadedYmmpxProject Project,
     IReadOnlyList<LoadedYmmpxResource> Resources,
-    IReadOnlyList<LegacyResourceLink> Links);
+    IReadOnlyList<LegacyResourceLink> Links)
+{
+    /// <summary>Gets format-independent references supplied directly by a reader when available.</summary>
+    public IReadOnlyList<ProjectResourceReference> ProjectReferences { get; init; } = Array.Empty<ProjectResourceReference>();
+}
 
 /// <summary>Contains the unmodified text of the project entry.</summary>
 public sealed record LoadedYmmpxProject(string PackagePath, string Content);
