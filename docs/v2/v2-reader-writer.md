@@ -9,3 +9,14 @@ Resolverは`ProjectResourceReference`を受けてFilePathだけを展開先に�
 CancellationはWriter、Reader、Resolver、Extractorの公開async処理で尊重する。Extractorのdefault overwrite policyは`FailIfExists`である。package全体のrollbackは対象外で、展開途中に失敗した場合に完了済みファイルは残り得る。
 
 Readerはmanifest hashの形式を検証するが、open時にresource全体のhash再計算は行わない。Round-trip testsではsource、manifest、展開resourceの一致を検証する。Reflection、YMM4 Core依存、Plugin・外部素材Recoveryはこの層に含めない。
+
+## Consumer Writer Options
+
+`YmmpxV2WriteRequest.Options` はConsumerがWriter内部のresource discoveryやZIP操作を再実装せずに利用するためのAPIである。
+
+- `ExcludedResources` はproject directory基準で絶対pathへ正規化して照合する。Windowsでは大小文字を区別しない。空値と存在しない指定は無視する。除外resourceはmanifestとZIPへ含めず、package projectの該当`FilePath`は元参照のまま残す。
+- PNG ImageSequenceはatomicである。sequenceの任意frameが除外される場合、sequence全体をpackageへ含めない。brokenな一部frame packageを作らない。
+- `IncludeProjectUiSettings` のdefaultは`true`で、v1と同じくrootの`LayoutXml`と`ToolStates`を含める。`false`ではpackage project copyからこの2 propertyだけを削除し、source projectは変更しない。
+- `Progress` は`IProgress<YmmpxV2WriteProgress>`であり、stage・current・total・resource名を通知する。stageはresource discovery、project処理、hash、package/resource書込、finalize、completedである。CoreはUI文言やUI frameworkへ依存しない。callback例外は呼び出し側の例外として伝播する。
+
+Cancellationは`CancellationToken`だけが担当し、progressは結果やcancelの代替ではない。これらのoptionsはFormat 2.0やmanifest schema 1を変更しない。
