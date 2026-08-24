@@ -93,6 +93,50 @@ public sealed class YmmpxV2PackageTests : IDisposable
         await Assert.ThrowsAsync<InvalidDataException>(() => YmmpxV2Reader.OpenAsync(stream, TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task AppliesConsumerOptionsWithoutChangingTheSourceProject()
+    {
+        var source = Path.Combine(root, "options");
+        Directory.CreateDirectory(source);
+        var included = Path.Combine(source, "included.png");
+        var excluded = Path.Combine(source, "除外.png");
+        await File.WriteAllTextAsync(included, "included", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(excluded, "excluded", TestContext.Current.CancellationToken);
+        var projectPath = Path.Combine(source, "project.ymmp");
+        var project = "{\"LayoutXml\":\"layout\",\"ToolStates\":{\"tool\":1},\"Unknown\":7,\"Included\":{\"FilePath\":" + System.Text.Json.JsonSerializer.Serialize(included) + "},\"Excluded\":{\"FilePath\":" + System.Text.Json.JsonSerializer.Serialize(excluded) + "}}";
+        await File.WriteAllTextAsync(projectPath, project, TestContext.Current.CancellationToken);
+        var updates = new List<YmmpxV2WriteProgress>();
+        var packagePath = Path.Combine(root, "options.ymmpx");
+
+        await YmmpxV2Writer.WriteAsync(new YmmpxV2WriteRequest(projectPath, packagePath)
+        {
+            Options = new YmmpxV2WriteOptions
+            {
+                ExcludedResources = [excluded, "", "missing.png"],
+                IncludeProjectUiSettings = false,
+                Progress = new ImmediateProgress(updates)
+            }
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(project, await File.ReadAllTextAsync(projectPath, TestContext.Current.CancellationToken));
+        using var archive = ZipFile.OpenRead(packagePath);
+        Assert.Null(archive.GetEntry("resources/除外.png"));
+        var manifest = PackageManifestSerializer.Deserialize(await new StreamReader(archive.GetEntry(PackageManifest.FileName)!.Open()).ReadToEndAsync(TestContext.Current.CancellationToken));
+        Assert.Single(manifest.Resources);
+        Assert.DoesNotContain(manifest.Resources, resource => resource.FileName == "除外.png");
+        var packagedProject = JsonNode.Parse(await new StreamReader(archive.GetEntry("project.ymmp")!.Open()).ReadToEndAsync(TestContext.Current.CancellationToken))!;
+        Assert.Null(packagedProject["LayoutXml"]);
+        Assert.Null(packagedProject["ToolStates"]);
+        Assert.Equal(7, packagedProject["Unknown"]!.GetValue<int>());
+        Assert.Equal(excluded, packagedProject["Excluded"]!["FilePath"]!.GetValue<string>());
+        Assert.Contains(updates, update => update.Stage == YmmpxV2WriteStage.Completed && update.Fraction == 1);
+    }
+
+    private sealed class ImmediateProgress(List<YmmpxV2WriteProgress> updates) : IProgress<YmmpxV2WriteProgress>
+    {
+        public void Report(YmmpxV2WriteProgress value) => updates.Add(value);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root)) Directory.Delete(root, true);

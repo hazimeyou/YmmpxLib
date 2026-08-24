@@ -7,7 +7,50 @@ using System.Text.Json.Nodes;
 namespace YmmpxLibV2;
 
 /// <summary>Describes one v2 package write operation.</summary>
-public sealed record YmmpxV2WriteRequest(string ProjectPath, string OutputPath, bool Overwrite = false);
+public sealed record YmmpxV2WriteRequest(string ProjectPath, string OutputPath, bool Overwrite = false)
+{
+    /// <summary>Gets optional consumer controls for resource selection, package-project UI settings, and progress.</summary>
+    public YmmpxV2WriteOptions? Options { get; init; }
+}
+
+/// <summary>Controls optional behavior of <see cref="YmmpxV2Writer"/>.</summary>
+public sealed class YmmpxV2WriteOptions
+{
+    /// <summary>Gets resource paths excluded from the package. Paths are resolved relative to the project when not absolute.</summary>
+    public IReadOnlyCollection<string> ExcludedResources { get; init; } = Array.Empty<string>();
+
+    /// <summary>Gets whether root project UI settings (<c>LayoutXml</c> and <c>ToolStates</c>) are stored. The default preserves v1 behavior.</summary>
+    public bool IncludeProjectUiSettings { get; init; } = true;
+
+    /// <summary>Gets the optional progress receiver. Exceptions from it are propagated to the caller.</summary>
+    public IProgress<YmmpxV2WriteProgress>? Progress { get; init; }
+}
+
+/// <summary>Identifies a writer progress stage without embedding UI text in the Core library.</summary>
+public enum YmmpxV2WriteStage
+{
+    /// <summary>Finding eligible resource references.</summary>
+    DiscoveringResources,
+    /// <summary>Preparing the package project copy.</summary>
+    ProcessingProject,
+    /// <summary>Calculating one resource identity.</summary>
+    HashingResource,
+    /// <summary>Writing descriptor, manifest, and project entries.</summary>
+    WritingPackage,
+    /// <summary>Writing one resource entry.</summary>
+    WritingResource,
+    /// <summary>Finishing the temporary package.</summary>
+    Finalizing,
+    /// <summary>The completed package was moved to its destination.</summary>
+    Completed
+}
+
+/// <summary>Reports the current writer stage and resource count.</summary>
+public sealed record YmmpxV2WriteProgress(YmmpxV2WriteStage Stage, int Current, int Total, string? ResourceName = null)
+{
+    /// <summary>Gets the completed fraction, or zero when a stage has no resource count.</summary>
+    public double Fraction => Total == 0 ? 0 : Math.Clamp((double)Current / Total, 0, 1);
+}
 
 /// <summary>Creates YMMPX Format 2.0 packages without modifying the source project.</summary>
 public static class YmmpxV2Writer
@@ -18,13 +61,18 @@ public static class YmmpxV2Writer
         ArgumentNullException.ThrowIfNull(request);
         var projectPath = Path.GetFullPath(request.ProjectPath);
         var outputPath = Path.GetFullPath(request.OutputPath);
+        var options = request.Options ?? new YmmpxV2WriteOptions();
         if (!File.Exists(projectPath)) throw new FileNotFoundException("Project file was not found.", projectPath);
         if (File.Exists(outputPath) && !request.Overwrite) throw new IOException($"Output already exists: {outputPath}");
         var projectDirectory = Path.GetDirectoryName(projectPath)!;
         var raw = await File.ReadAllTextAsync(projectPath, cancellationToken).ConfigureAwait(false);
         var root = JsonNode.Parse(raw) ?? throw new InvalidDataException("Project JSON is empty.");
-        var sources = CollectResources(root, projectDirectory, cancellationToken);
-        var entries = await CreateEntriesAsync(sources, cancellationToken).ConfigureAwait(false);
+        Report(options, YmmpxV2WriteStage.DiscoveringResources, 0, 0);
+        var excluded = NormalizeExcluded(options.ExcludedResources, projectDirectory);
+        var sources = CollectResources(root, projectDirectory, excluded, cancellationToken);
+        Report(options, YmmpxV2WriteStage.ProcessingProject, 0, sources.Count);
+        if (!options.IncludeProjectUiSettings) RemoveProjectUiSettings(root);
+        var entries = await CreateEntriesAsync(sources, excluded, options, cancellationToken).ConfigureAwait(false);
         ReplaceFilePaths(root, entries, projectDirectory);
         var manifest = new PackageManifest(entries.Select(entry => entry.Manifest));
         var temporary = Path.Combine(Path.GetDirectoryName(outputPath)!, $".{Path.GetFileName(outputPath)}.{Guid.NewGuid():N}.tmp");
@@ -32,10 +80,12 @@ public static class YmmpxV2Writer
         {
             using (var archive = ZipFile.Open(temporary, ZipArchiveMode.Create))
             {
+                Report(options, YmmpxV2WriteStage.WritingPackage, 0, entries.Count);
                 await WriteTextAsync(archive, YmmpxFormatDescriptor.FileName,
                     YmmpxFormatDescriptorSerializer.Serialize(new YmmpxFormatDescriptor(2, 0, PackageManifest.FileName)), cancellationToken).ConfigureAwait(false);
                 await WriteTextAsync(archive, PackageManifest.FileName, PackageManifestSerializer.Serialize(manifest), cancellationToken).ConfigureAwait(false);
                 await WriteTextAsync(archive, "project.ymmp", root.ToJsonString(new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }), cancellationToken).ConfigureAwait(false);
+                var current = 0;
                 foreach (var entry in entries.OrderBy(entry => entry.PackagePath, StringComparer.Ordinal))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -43,21 +93,24 @@ public static class YmmpxV2Writer
                     await using var input = new FileStream(entry.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 128, true);
                     await using var output = zipEntry.Open();
                     await input.CopyToAsync(output, 1024 * 128, cancellationToken).ConfigureAwait(false);
+                    Report(options, YmmpxV2WriteStage.WritingResource, ++current, entries.Count, entry.Manifest.FileName);
                 }
             }
+            Report(options, YmmpxV2WriteStage.Finalizing, entries.Count, entries.Count);
             File.Move(temporary, outputPath, request.Overwrite);
+            Report(options, YmmpxV2WriteStage.Completed, entries.Count, entries.Count);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
-    private static List<SourceReference> CollectResources(JsonNode root, string projectDirectory, CancellationToken cancellationToken)
+    private static List<SourceReference> CollectResources(JsonNode root, string projectDirectory, IReadOnlySet<string> excluded, CancellationToken cancellationToken)
     {
         var values = new List<SourceReference>();
-        Collect(root, projectDirectory, values, cancellationToken, isVideoItem: false);
+        Collect(root, projectDirectory, values, excluded, cancellationToken, isVideoItem: false);
         return values;
     }
 
-    private static void Collect(JsonNode? node, string baseDirectory, List<SourceReference> values, CancellationToken token, bool isVideoItem)
+    private static void Collect(JsonNode? node, string baseDirectory, List<SourceReference> values, IReadOnlySet<string> excluded, CancellationToken token, bool isVideoItem)
     {
         token.ThrowIfCancellationRequested();
         if (node is JsonObject obj)
@@ -69,12 +122,12 @@ public static class YmmpxV2Writer
                 if (property.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) && property.Value is JsonValue value && value.TryGetValue<string>(out var reference) && !string.IsNullOrWhiteSpace(reference))
                 {
                     var source = ResolveExisting(baseDirectory, reference);
-                    if (source is not null) values.Add(new SourceReference(reference, source, video && Path.GetExtension(source).Equals(".png", StringComparison.OrdinalIgnoreCase)));
+                    if (source is not null && !excluded.Contains(source)) values.Add(new SourceReference(reference, source, video && Path.GetExtension(source).Equals(".png", StringComparison.OrdinalIgnoreCase)));
                 }
-                else Collect(property.Value, baseDirectory, values, token, video);
+                else Collect(property.Value, baseDirectory, values, excluded, token, video);
             }
         }
-        else if (node is JsonArray array) foreach (var child in array) Collect(child, baseDirectory, values, token, isVideoItem);
+        else if (node is JsonArray array) foreach (var child in array) Collect(child, baseDirectory, values, excluded, token, isVideoItem);
     }
 
     private static string? ResolveExisting(string baseDirectory, string reference)
@@ -83,7 +136,7 @@ public static class YmmpxV2Writer
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { return null; }
     }
 
-    private static async Task<List<PackageEntry>> CreateEntriesAsync(List<SourceReference> references, CancellationToken token)
+    private static async Task<List<PackageEntry>> CreateEntriesAsync(List<SourceReference> references, IReadOnlySet<string> excluded, YmmpxV2WriteOptions options, CancellationToken token)
     {
         var sourceToEntry = new Dictionary<string, PackageEntry>(ProjectResourceReferenceMapper.GetPathComparer());
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -97,27 +150,52 @@ public static class YmmpxV2Writer
                 var frames = FindSequence(reference.SourcePath);
                 if (frames.Count >= 2)
                 {
+                    // A sequence is atomic: excluding any frame leaves the representative FilePath untouched.
+                    if (frames.Any(excluded.Contains))
+                        continue;
                     var group = $"sequence_{++sequenceIndex}";
                     foreach (var frame in frames)
                     {
                         if (sourceToEntry.ContainsKey(frame)) continue;
                         var path = $"resources/{group}/{Path.GetFileName(frame)}";
-                        sourceToEntry[frame] = await CreateEntryAsync(frame, path, ManifestResourceKind.ImageSequence, group, token).ConfigureAwait(false);
+                        sourceToEntry[frame] = await CreateEntryAsync(frame, path, ManifestResourceKind.ImageSequence, group, options, sourceToEntry.Count, references.Count, token).ConfigureAwait(false);
                     }
                     continue;
                 }
             }
             var fileName = UniqueName(Path.GetFileName(reference.SourcePath), names);
-            sourceToEntry[reference.SourcePath] = await CreateEntryAsync(reference.SourcePath, $"resources/{fileName}", DetectKind(reference.SourcePath), null, token).ConfigureAwait(false);
+            sourceToEntry[reference.SourcePath] = await CreateEntryAsync(reference.SourcePath, $"resources/{fileName}", DetectKind(reference.SourcePath), null, options, sourceToEntry.Count, references.Count, token).ConfigureAwait(false);
         }
         return sourceToEntry.Values.ToList();
     }
 
-    private static async Task<PackageEntry> CreateEntryAsync(string source, string packagePath, ManifestResourceKind kind, string? group, CancellationToken token)
+    private static async Task<PackageEntry> CreateEntryAsync(string source, string packagePath, ManifestResourceKind kind, string? group, YmmpxV2WriteOptions options, int current, int total, CancellationToken token)
     {
+        Report(options, YmmpxV2WriteStage.HashingResource, current, total, Path.GetFileName(source));
         var identity = await ResourceIdentity.CreateAsync(source, token).ConfigureAwait(false);
         return new PackageEntry(source, packagePath, new PackageManifestResource(null, identity.FileName, identity.Length, identity.Sha256, packagePath, kind, group));
     }
+
+    private static HashSet<string> NormalizeExcluded(IEnumerable<string>? paths, string projectDirectory)
+    {
+        var result = new HashSet<string>(ProjectResourceReferenceMapper.GetPathComparer());
+        if (paths is null) return result;
+        foreach (var path in paths)
+        {
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            var resolved = ResolveExisting(projectDirectory, path);
+            if (resolved is not null) result.Add(resolved);
+        }
+        return result;
+    }
+
+    private static void RemoveProjectUiSettings(JsonNode root)
+    {
+        if (root is JsonObject obj) { obj.Remove("LayoutXml"); obj.Remove("ToolStates"); }
+    }
+
+    private static void Report(YmmpxV2WriteOptions options, YmmpxV2WriteStage stage, int current, int total, string? resourceName = null) =>
+        options.Progress?.Report(new YmmpxV2WriteProgress(stage, current, total, resourceName));
 
     private static List<string> FindSequence(string source)
     {
