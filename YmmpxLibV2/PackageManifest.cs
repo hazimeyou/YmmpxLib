@@ -103,14 +103,11 @@ public sealed class PackageManifestResource
         string? groupId = null)
     {
         var identity = new ResourceIdentity(originalPath, fileName, length, sha256);
-        if (string.IsNullOrWhiteSpace(packagePath))
-            throw new ArgumentException("Package path is required.", nameof(packagePath));
-
         OriginalPath = identity.OriginalPath;
         FileName = identity.FileName;
         Length = identity.Length;
         Sha256 = identity.Sha256;
-        PackagePath = NormalizePackagePath(packagePath);
+        PackagePath = PackagePathValidator.NormalizeRelativePath(packagePath, nameof(packagePath));
         if (!Enum.IsDefined(kind))
             throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown manifest resource kind.");
         Kind = kind;
@@ -122,17 +119,6 @@ public sealed class PackageManifestResource
     /// </summary>
     public ResourceIdentity ToResourceIdentity() => new(OriginalPath, FileName, Length, Sha256);
 
-    private static string NormalizePackagePath(string packagePath)
-    {
-        var normalized = packagePath.Replace('\\', '/');
-        if (Path.IsPathFullyQualified(packagePath) || normalized.StartsWith("/", StringComparison.Ordinal) ||
-            normalized.StartsWith("//", StringComparison.Ordinal) || normalized.Split('/').Any(segment => segment == ".."))
-        {
-            throw new ArgumentException("Package path must be a relative path without traversal.", nameof(packagePath));
-        }
-
-        return normalized;
-    }
 }
 
 /// <summary>
