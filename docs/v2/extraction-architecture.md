@@ -67,9 +67,7 @@ package 全体の transaction / rollback は今回の対象外である。途中
 
 ## 今回の境界
 
-今回の Extractor は package 内 content を安全に disk へ出すまでである。
-LegacyV1 の links に基づく YMMP 内 `FilePath` の書き換え・最終復元は行わない。
-links は `LoadedYmmpxPackage` に保持されるため、次工程で明示的な復元処理へ接続できる。
+Extractor は package 内 content を安全に disk へ出す。LegacyV1 の links に基づく YMMP 内 `FilePath` 復元は、Extractorの外側にある `YmmpxProjectReferenceResolver` が行う。Resolverが作ったimmutable project copyを `YmmpxExtractionOptions.ProjectOverride` として明示的に渡せるため、Extractor自身はformat-specific linkを解釈しない。詳細は [Project Reference Resolution](project-reference-resolution.md) を参照する。
 
 YMM4 型、Reflection、Plugin Portal、外部素材 Recovery はこの層へ持ち込まない。
 
