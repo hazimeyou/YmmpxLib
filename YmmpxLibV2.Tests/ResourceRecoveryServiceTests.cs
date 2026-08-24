@@ -126,9 +126,11 @@ public sealed class ResourceRecoveryServiceTests : IDisposable
         var directory = CreateDirectory("assets");
         var candidate = await WriteAsync(directory, "candidate.bin", [1, 2, 3]);
         var before = File.GetLastWriteTimeUtc(candidate);
+        var searchResult = await ResourceRecoveryService.FindCandidatesAsync(resource, [directory], TestContext.Current.CancellationToken);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
+        Assert.Equal(ResourceRecoveryOutcome.SingleCandidate, searchResult.Outcome);
         await Assert.ThrowsAsync<OperationCanceledException>(() => ResourceRecoveryService.FindCandidatesAsync(resource, [directory], cancellation.Token));
         Assert.Equal(before, File.GetLastWriteTimeUtc(candidate));
         Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(candidate, TestContext.Current.CancellationToken));
