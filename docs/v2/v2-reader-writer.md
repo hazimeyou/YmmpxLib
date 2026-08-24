@@ -1,0 +1,11 @@
+# v2 Reader / Writer
+
+`YmmpxV2Writer` はsource projectのcopyだけを変更してFormat 2.0 ZIPを作る。resourceのSHA-256はstreamで計算し、ZIPへのコピーもstreamで行う。source projectとsource resourceは変更しない。出力はtemporary fileを完成させてからmoveするため、失敗時に最終packageを残さない。
+
+`YmmpxV2Reader` は`YmmpxFormatDetector`がSupportedV2と判定したpackageだけを開き、descriptor、manifest、project、resource metadataをcommon `LoadedYmmpxPackage` と`YmmpxPackageSession`へ変換する。resource本体は`byte[]`保持せず、sessionのstream accessで読む。入力streamの所有権は呼び出し側に残る。
+
+Resolverは`ProjectResourceReference`を受けてFilePathだけを展開先に復元し、Extractorは準備済みprojectとresource streamsをdiskへ出力する。v1/v2とも同じResolver／Extractorを使い、format分岐を持ち込まない。
+
+CancellationはWriter、Reader、Resolver、Extractorの公開async処理で尊重する。Extractorのdefault overwrite policyは`FailIfExists`である。package全体のrollbackは対象外で、展開途中に失敗した場合に完了済みファイルは残り得る。
+
+Readerはmanifest hashの形式を検証するが、open時にresource全体のhash再計算は行わない。Round-trip testsではsource、manifest、展開resourceの一致を検証する。Reflection、YMM4 Core依存、Plugin・外部素材Recoveryはこの層に含めない。
