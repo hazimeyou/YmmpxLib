@@ -28,18 +28,21 @@ public sealed class PackageManifest
     /// </summary>
     public IReadOnlyList<PackageManifestResource> Resources { get; }
 
+    /// <summary>Gets optional metadata for the single project currently stored in this package.</summary>
+    public PackageManifestProject? Project { get; }
+
     /// <summary>
     /// Initializes a manifest using the current schema version.
     /// </summary>
-    public PackageManifest(IEnumerable<PackageManifestResource> resources)
-        : this(CurrentSchemaVersion, resources)
+    public PackageManifest(IEnumerable<PackageManifestResource> resources, PackageManifestProject? project = null)
+        : this(CurrentSchemaVersion, resources, project)
     {
     }
 
     /// <summary>
     /// Initializes a manifest.
     /// </summary>
-    public PackageManifest(int schemaVersion, IEnumerable<PackageManifestResource> resources)
+    public PackageManifest(int schemaVersion, IEnumerable<PackageManifestResource> resources, PackageManifestProject? project = null)
     {
         if (schemaVersion != CurrentSchemaVersion)
             throw new ArgumentOutOfRangeException(nameof(schemaVersion), schemaVersion, "Unsupported manifest schema version.");
@@ -58,6 +61,23 @@ public sealed class PackageManifest
 
         SchemaVersion = schemaVersion;
         Resources = orderedResources;
+        Project = project;
+    }
+}
+
+/// <summary>Describes one package project without recording its original absolute path.</summary>
+public sealed class PackageManifestProject
+{
+    /// <summary>Gets the project entry path inside the package.</summary>
+    public string PackagePath { get; }
+    /// <summary>Gets the filename restored for users.</summary>
+    public string OriginalFileName { get; }
+
+    /// <summary>Initializes package-project metadata.</summary>
+    public PackageManifestProject(string packagePath, string originalFileName)
+    {
+        PackagePath = PackagePathValidator.NormalizeRelativePath(packagePath, nameof(packagePath));
+        OriginalFileName = ProjectFileNameValidator.Validate(originalFileName, nameof(originalFileName));
     }
 }
 
@@ -192,6 +212,7 @@ public static class PackageManifestSerializer
     {
         public int SchemaVersion { get; set; }
         public List<ResourceDocument>? Resources { get; set; }
+        public ProjectDocument? Project { get; set; }
 
         public PackageManifest ToManifest()
         {
@@ -202,7 +223,7 @@ public static class PackageManifestSerializer
 
             try
             {
-                return new PackageManifest(SchemaVersion, Resources.Select(resource => resource.ToResource()));
+                return new PackageManifest(SchemaVersion, Resources.Select(resource => resource.ToResource()), Project?.ToProject());
             }
             catch (ArgumentException exception)
             {
@@ -213,7 +234,24 @@ public static class PackageManifestSerializer
         public static ManifestDocument FromManifest(PackageManifest manifest) => new()
         {
             SchemaVersion = manifest.SchemaVersion,
-            Resources = manifest.Resources.Select(ResourceDocument.FromResource).ToList()
+            Resources = manifest.Resources.Select(ResourceDocument.FromResource).ToList(),
+            Project = manifest.Project is null ? null : ProjectDocument.FromProject(manifest.Project)
+        };
+    }
+
+    private sealed class ProjectDocument
+    {
+        public string? PackagePath { get; set; }
+        public string? OriginalFileName { get; set; }
+
+        public PackageManifestProject ToProject() => new(
+            PackagePath ?? throw new PackageManifestException("Project packagePath is required."),
+            OriginalFileName ?? throw new PackageManifestException("Project originalFileName is required."));
+
+        public static ProjectDocument FromProject(PackageManifestProject project) => new()
+        {
+            PackagePath = project.PackagePath,
+            OriginalFileName = project.OriginalFileName
         };
     }
 

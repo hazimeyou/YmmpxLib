@@ -40,7 +40,17 @@ public static class YmmpxPackageExtractor
         Directory.CreateDirectory(root);
         var project = options.ProjectOverride ?? source.Package.Project;
 
-        await WriteTextAsync(project.PackagePath, project.Content, root, options, cancellationToken).ConfigureAwait(false);
+        string projectFileName;
+        try
+        {
+            projectFileName = ProjectFileNameValidator.Validate(project.OriginalFileName, nameof(project.OriginalFileName));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new YmmpxExtractionException(YmmpxExtractionError.UnsafePath, "Project output file name is unsafe.", exception);
+        }
+
+        await WriteTextAsync(projectFileName, project.Content, root, options, cancellationToken).ConfigureAwait(false);
         foreach (var resource in source.Package.Resources.OrderBy(resource => resource.PackagePath, StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();

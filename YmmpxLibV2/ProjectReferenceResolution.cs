@@ -82,7 +82,10 @@ public static class YmmpxProjectReferenceResolver
             WriteIndented = false,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         });
-        return new YmmpxProjectResolutionResult(new LoadedYmmpxProject(project.PackagePath, resolvedText), replacedCount);
+        return new YmmpxProjectResolutionResult(new LoadedYmmpxProject(project.PackagePath, resolvedText)
+        {
+            OriginalFileName = project.OriginalFileName
+        }, replacedCount);
     }
 
     private static IReadOnlyDictionary<string, string> CreateResolvedMappings(

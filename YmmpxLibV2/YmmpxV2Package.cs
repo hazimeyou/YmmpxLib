@@ -74,7 +74,7 @@ public static class YmmpxV2Writer
         if (!options.IncludeProjectUiSettings) RemoveProjectUiSettings(root);
         var entries = await CreateEntriesAsync(sources, excluded, options, cancellationToken).ConfigureAwait(false);
         ReplaceFilePaths(root, entries, projectDirectory);
-        var manifest = new PackageManifest(entries.Select(entry => entry.Manifest));
+        var manifest = new PackageManifest(entries.Select(entry => entry.Manifest), new PackageManifestProject("project.ymmp", Path.GetFileName(projectPath)));
         var temporary = Path.Combine(Path.GetDirectoryName(outputPath)!, $".{Path.GetFileName(outputPath)}.{Guid.NewGuid():N}.tmp");
         try
         {
@@ -254,11 +254,16 @@ public static class YmmpxV2Reader
             foreach (var entry in archive.Entries.Where(entry => !entry.FullName.EndsWith("/", StringComparison.Ordinal)))
             { var path = PackagePathValidator.NormalizeRelativePath(entry.FullName, "entryPath"); if (!entries.TryAdd(path, entry)) throw new InvalidDataException($"Duplicate entry: {path}"); }
             var manifestEntry = entries.TryGetValue(PackageManifest.FileName, out var value) ? value : throw new InvalidDataException("Manifest is missing.");
-            var projectEntry = entries.TryGetValue("project.ymmp", out value) ? value : throw new InvalidDataException("Project is missing.");
             var manifest = PackageManifestSerializer.Deserialize(await ReadTextAsync(manifestEntry, 64L * 1024 * 1024, cancellationToken).ConfigureAwait(false));
+            var projectPackagePath = manifest.Project?.PackagePath ?? "project.ymmp";
+            var projectEntry = entries.TryGetValue(projectPackagePath, out value) ? value : throw new InvalidDataException("Project is missing.");
             var project = await ReadTextAsync(projectEntry, LegacyV1Reader.MaxProjectLength, cancellationToken).ConfigureAwait(false);
             foreach (var resource in manifest.Resources) if (!entries.TryGetValue(resource.PackagePath, out var zip) || zip.Length != resource.Length) throw new InvalidDataException($"Manifest resource is missing or mismatched: {resource.PackagePath}");
-            var loaded = new LoadedYmmpxPackage(LoadedYmmpxSourceFormat.V2, new LoadedYmmpxProject("project.ymmp", project), manifest.Resources.Select(resource => new LoadedYmmpxResource(resource.PackagePath, resource.FileName, resource.Length, resource.Kind, resource.GroupId)).ToArray(), [])
+            var loadedProject = new LoadedYmmpxProject(projectEntry.FullName, project)
+            {
+                OriginalFileName = manifest.Project?.OriginalFileName ?? Path.GetFileName(projectEntry.FullName)
+            };
+            var loaded = new LoadedYmmpxPackage(LoadedYmmpxSourceFormat.V2, loadedProject, manifest.Resources.Select(resource => new LoadedYmmpxResource(resource.PackagePath, resource.FileName, resource.Length, resource.Kind, resource.GroupId)).ToArray(), [])
             { ProjectReferences = manifest.Resources.Select(resource => new ProjectResourceReference(resource.PackagePath, resource.PackagePath)).ToArray() };
             var session = new YmmpxPackageSession(loaded, archive, entries); archive = null; return session;
         }

@@ -371,7 +371,11 @@ public sealed record LoadedYmmpxPackage(
 }
 
 /// <summary>Contains the unmodified text of the project entry.</summary>
-public sealed record LoadedYmmpxProject(string PackagePath, string Content);
+public sealed record LoadedYmmpxProject(string PackagePath, string Content)
+{
+    /// <summary>Gets the user-facing filename restored by the common extractor.</summary>
+    public string OriginalFileName { get; init; } = Path.GetFileName(PackagePath);
+}
 
 /// <summary>Contains metadata for one resource entry without loading its content.</summary>
 public sealed record LoadedYmmpxResource(
