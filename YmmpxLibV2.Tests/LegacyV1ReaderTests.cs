@@ -17,6 +17,7 @@ public sealed class LegacyV1ReaderTests
 
         Assert.Equal(LoadedYmmpxSourceFormat.LegacyV1, loaded.SourceFormat);
         Assert.Equal("project.ymmp", loaded.Project.PackagePath);
+        Assert.Equal("project.ymmp", loaded.Project.OriginalFileName);
         Assert.Equal("{\"title\":\"test\"}", loaded.Project.Content);
         Assert.Single(loaded.Links);
         var resource = Assert.Single(loaded.Resources);
@@ -74,6 +75,7 @@ public sealed class LegacyV1ReaderTests
         var loaded = await ReadAsync(package);
 
         Assert.Equal("projects/nested.ymmp", loaded.Project.PackagePath);
+        Assert.Equal("nested.ymmp", loaded.Project.OriginalFileName);
     }
 
     [Fact]
@@ -85,6 +87,7 @@ public sealed class LegacyV1ReaderTests
         var loaded = await ReadAsync(package);
 
         Assert.Equal("プロジェクト/琴葉葵.ymmp", loaded.Project.PackagePath);
+        Assert.Equal("琴葉葵.ymmp", loaded.Project.OriginalFileName);
         Assert.Equal("元/立ち絵.psd", Assert.Single(loaded.Links).OriginalReference);
         Assert.Equal("立ち絵.psd", Assert.Single(loaded.Resources).FileName);
     }

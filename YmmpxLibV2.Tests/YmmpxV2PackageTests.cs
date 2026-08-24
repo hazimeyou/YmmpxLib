@@ -43,6 +43,9 @@ public sealed class YmmpxV2PackageTests : IDisposable
             var manifestEntry = archive.GetEntry(PackageManifest.FileName)!;
             using var reader = new StreamReader(manifestEntry.Open());
             manifest = PackageManifestSerializer.Deserialize(await reader.ReadToEndAsync(TestContext.Current.CancellationToken));
+            Assert.NotNull(manifest.Project);
+            Assert.Equal("project.ymmp", manifest.Project!.PackagePath);
+            Assert.Equal("日本語.ymmp", manifest.Project.OriginalFileName);
             Assert.Equal(114, manifest.Resources.Count);
             Assert.All(manifest.Resources, resource => Assert.Null(resource.OriginalPath));
             Assert.All(manifest.Resources, resource => Assert.Equal(64, resource.Sha256.Length));
@@ -56,9 +59,12 @@ public sealed class YmmpxV2PackageTests : IDisposable
         var resolution = YmmpxProjectReferenceResolver.Resolve(session.Package.Project, ProjectResourceReferenceMapper.FromPackage(session.Package), destination, TestContext.Current.CancellationToken);
         await YmmpxPackageExtractor.ExtractAsync(session, destination, new YmmpxExtractionOptions { ProjectOverride = resolution.Project }, TestContext.Current.CancellationToken);
 
-        var output = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(destination, "project.ymmp"), TestContext.Current.CancellationToken))!;
+        var outputProjectPath = Path.Combine(destination, "日本語.ymmp");
+        var output = JsonNode.Parse(await File.ReadAllTextAsync(outputProjectPath, TestContext.Current.CancellationToken))!;
         Assert.Equal(YmmpxFormatDetectionStatus.SupportedV2, detected.Status);
         Assert.Equal(LoadedYmmpxSourceFormat.V2, session.Package.SourceFormat);
+        Assert.Equal("日本語.ymmp", session.Package.Project.OriginalFileName);
+        Assert.True(File.Exists(outputProjectPath));
         Assert.Equal(5, resolution.ReplacedReferenceCount);
         Assert.True(File.Exists(output["Image"]!["FilePath"]!.GetValue<string>()));
         Assert.True(File.Exists(output["Audio"]!["FilePath"]!.GetValue<string>()));
@@ -91,6 +97,24 @@ public sealed class YmmpxV2PackageTests : IDisposable
         }
         stream.Position = 0;
         await Assert.ThrowsAsync<InvalidDataException>(() => YmmpxV2Reader.OpenAsync(stream, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task FallsBackToTheInternalProjectNameForPackagesWithoutProjectMetadata()
+    {
+        using var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            await WriteEntryAsync(archive, YmmpxFormatDescriptor.FileName, YmmpxFormatDescriptorSerializer.Serialize(new YmmpxFormatDescriptor(2, 0, PackageManifest.FileName)));
+            await WriteEntryAsync(archive, PackageManifest.FileName, PackageManifestSerializer.Serialize(new PackageManifest([])));
+            await WriteEntryAsync(archive, "project.ymmp", "{\"title\":\"legacy v2\"}");
+        }
+
+        stream.Position = 0;
+        await using var session = await YmmpxV2Reader.OpenAsync(stream, TestContext.Current.CancellationToken);
+
+        Assert.Equal("project.ymmp", session.Package.Project.PackagePath);
+        Assert.Equal("project.ymmp", session.Package.Project.OriginalFileName);
     }
 
     [Fact]
@@ -160,6 +184,14 @@ public sealed class YmmpxV2PackageTests : IDisposable
     private sealed class ImmediateProgress(List<YmmpxV2WriteProgress> updates) : IProgress<YmmpxV2WriteProgress>
     {
         public void Report(YmmpxV2WriteProgress value) => updates.Add(value);
+    }
+
+    private static async Task WriteEntryAsync(ZipArchive archive, string path, string content)
+    {
+        var entry = archive.CreateEntry(path);
+        await using var stream = entry.Open();
+        await using var writer = new StreamWriter(stream);
+        await writer.WriteAsync(content);
     }
 
     public void Dispose()

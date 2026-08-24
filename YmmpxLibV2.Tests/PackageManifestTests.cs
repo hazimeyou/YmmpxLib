@@ -33,6 +33,31 @@ public sealed class PackageManifestTests : IDisposable
     }
 
     [Fact]
+    public void SerializesAndDeserializesProjectMetadata()
+    {
+        var manifest = new PackageManifest(
+            [CreateResource()],
+            new PackageManifestProject("project.ymmp", "同人誌ラクスルテンプレ.ymmp"));
+
+        var restored = PackageManifestSerializer.Deserialize(PackageManifestSerializer.Serialize(manifest));
+
+        Assert.NotNull(restored.Project);
+        Assert.Equal("project.ymmp", restored.Project!.PackagePath);
+        Assert.Equal("同人誌ラクスルテンプレ.ymmp", restored.Project.OriginalFileName);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("../escape.ymmp")]
+    [InlineData("folder/project.ymmp")]
+    [InlineData("C:\\project.ymmp")]
+    [InlineData("project.txt")]
+    public void RejectsUnsafeOrNonYmmpOriginalProjectFileName(string fileName)
+    {
+        Assert.Throws<ArgumentException>(() => new PackageManifestProject("project.ymmp", fileName));
+    }
+
+    [Fact]
     public void KeepsMultipleResourcesInPackagePathOrder()
     {
         var manifest = new PackageManifest(new[]

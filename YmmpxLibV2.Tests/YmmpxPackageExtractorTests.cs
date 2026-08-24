@@ -52,7 +52,7 @@ public sealed class YmmpxPackageExtractorTests : IDisposable
         var destination = CreateDestination();
         await YmmpxPackageExtractor.ExtractAsync(session, destination, cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal("{\"title\":\"test\"}", await File.ReadAllTextAsync(Path.Combine(destination, "projects", "葵.ymmp"), TestContext.Current.CancellationToken));
+        Assert.Equal("{\"title\":\"test\"}", await File.ReadAllTextAsync(Path.Combine(destination, "葵.ymmp"), TestContext.Current.CancellationToken));
         Assert.Equal("psd", await File.ReadAllTextAsync(Path.Combine(destination, "resources", "素材", "立ち絵.psd"), TestContext.Current.CancellationToken));
         Assert.Equal("10", await File.ReadAllTextAsync(Path.Combine(destination, "resources", "sequence_1", "frame_10.png"), TestContext.Current.CancellationToken));
         Assert.All(session.Package.Resources.Where(resource => resource.GroupId == "sequence_1"), resource => Assert.Equal(ManifestResourceKind.ImageSequence, resource.Kind));
@@ -119,6 +119,18 @@ public sealed class YmmpxPackageExtractorTests : IDisposable
 
         Assert.Equal(YmmpxExtractionError.UnsafePath, exception.Error);
         Assert.False(File.Exists(Path.Combine(temporaryRoot, "escape.bin")));
+    }
+
+    [Fact]
+    public async Task RejectsUnsafeOriginalProjectFileNameBeforeWriting()
+    {
+        var project = new LoadedYmmpxProject("project.ymmp", "{}") { OriginalFileName = "../escape.ymmp" };
+        var package = new LoadedYmmpxPackage(LoadedYmmpxSourceFormat.V2, project, [], []);
+        var provider = new TestContentProvider(package, []);
+
+        var exception = await Assert.ThrowsAsync<YmmpxExtractionException>(() => YmmpxPackageExtractor.ExtractAsync(provider, CreateDestination(), cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(YmmpxExtractionError.UnsafePath, exception.Error);
     }
 
     [Fact]
