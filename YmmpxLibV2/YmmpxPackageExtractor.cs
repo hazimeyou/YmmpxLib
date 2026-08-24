@@ -16,6 +16,9 @@ public sealed class YmmpxExtractionOptions
 {
     /// <summary>Gets or sets the output overwrite policy. The safe default is <see cref="YmmpxOverwritePolicy.FailIfExists"/>.</summary>
     public YmmpxOverwritePolicy OverwritePolicy { get; init; } = YmmpxOverwritePolicy.FailIfExists;
+
+    /// <summary>Gets or sets an immutable prepared project to write instead of the source package project.</summary>
+    public LoadedYmmpxProject? ProjectOverride { get; init; }
 }
 
 /// <summary>Extracts a loaded package through a format-independent content provider.</summary>
@@ -35,13 +38,13 @@ public static class YmmpxPackageExtractor
 
         var root = Path.GetFullPath(destinationDirectory);
         Directory.CreateDirectory(root);
-        var rootWithSeparator = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+        var project = options.ProjectOverride ?? source.Package.Project;
 
-        await WriteTextAsync(source.Package.Project.PackagePath, source.Package.Project.Content, rootWithSeparator, options, cancellationToken).ConfigureAwait(false);
+        await WriteTextAsync(project.PackagePath, project.Content, root, options, cancellationToken).ConfigureAwait(false);
         foreach (var resource in source.Package.Resources.OrderBy(resource => resource.PackagePath, StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var destinationPath = GetDestinationPath(rootWithSeparator, resource.PackagePath);
+            var destinationPath = GetDestinationPath(root, resource.PackagePath);
             EnsureDestinationAvailable(destinationPath, options);
 
             try
@@ -97,15 +100,11 @@ public static class YmmpxPackageExtractor
         }
     }
 
-    private static string GetDestinationPath(string rootWithSeparator, string packagePath)
+    private static string GetDestinationPath(string root, string packagePath)
     {
         try
         {
-            var normalized = PackagePathValidator.NormalizeRelativePath(packagePath, nameof(packagePath));
-            var destination = Path.GetFullPath(Path.Combine(rootWithSeparator, normalized.Replace('/', Path.DirectorySeparatorChar)));
-            if (!destination.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
-                throw new YmmpxExtractionException(YmmpxExtractionError.UnsafePath, "Package path escapes the destination directory.");
-            return destination;
+            return PackageDestinationPathResolver.Resolve(root, packagePath);
         }
         catch (ArgumentException exception)
         {
