@@ -27,6 +27,15 @@ public static class LegacyV1Reader
     /// </summary>
     public static async Task<LoadedYmmpxPackage> ReadAsync(Stream package, CancellationToken cancellationToken = default)
     {
+        await using var session = await OpenAsync(package, cancellationToken).ConfigureAwait(false);
+        return session.Package;
+    }
+
+    /// <summary>
+    /// Opens a read-only package session. Dispose the returned session after every resource stream is disposed.
+    /// </summary>
+    public static async Task<YmmpxPackageSession> OpenAsync(Stream package, CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(package);
         if (!package.CanRead || !package.CanSeek)
             throw new ArgumentException("Package stream must be readable and seekable.", nameof(package));
@@ -35,29 +44,40 @@ public static class LegacyV1Reader
         if (detection.Status != YmmpxFormatDetectionStatus.LegacyV1)
             throw new LegacyV1ReadException(LegacyV1ReadError.NotLegacyV1, "The package is not a recognized LegacyV1 YMMPX package.");
 
+        ZipArchive? archive = null;
         try
         {
             package.Seek(0, SeekOrigin.Begin);
-            using var archive = new ZipArchive(package, ZipArchiveMode.Read, leaveOpen: true);
+            archive = new ZipArchive(package, ZipArchiveMode.Read, leaveOpen: true);
             var entries = ValidateAndIndexEntries(archive);
             var projectEntry = await FindProjectEntryAsync(entries, cancellationToken).ConfigureAwait(false);
             var projectText = await ReadTextEntryAsync(projectEntry, MaxProjectLength, cancellationToken, preserveContent: true).ConfigureAwait(false);
             var links = await ReadLinksAsync(entries, cancellationToken).ConfigureAwait(false);
             var resources = CreateResources(entries, links);
 
-            return new LoadedYmmpxPackage(
+            var loadedPackage = new LoadedYmmpxPackage(
                 LoadedYmmpxSourceFormat.LegacyV1,
                 new LoadedYmmpxProject(projectEntry.FullName, projectText),
                 resources,
                 links);
+            var session = new YmmpxPackageSession(loadedPackage, archive, entries);
+            archive = null;
+            return session;
         }
         catch (LegacyV1ReadException)
         {
+            archive?.Dispose();
             throw;
         }
         catch (InvalidDataException exception)
         {
+            archive?.Dispose();
             throw new LegacyV1ReadException(LegacyV1ReadError.InvalidArchive, "The legacy package archive is invalid.", exception);
+        }
+        catch
+        {
+            archive?.Dispose();
+            throw;
         }
     }
 
