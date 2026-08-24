@@ -25,7 +25,7 @@ public static class LocalResourceSearch
         var examinedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var readableLocations = 0;
 
-        if (File.Exists(resource.OriginalPath))
+        if (resource.OriginalPath is not null && File.Exists(resource.OriginalPath))
         {
             readableLocations++;
             await TryAddMatchAsync(resource.OriginalPath, resource, matches, issues, examinedFiles, cancellationToken)

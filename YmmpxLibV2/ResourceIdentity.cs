@@ -10,7 +10,7 @@ public sealed record ResourceIdentity
     /// <summary>
     /// Gets the original path recorded for the resource.
     /// </summary>
-    public string OriginalPath { get; }
+    public string? OriginalPath { get; }
 
     /// <summary>
     /// Gets the original file name.
@@ -30,13 +30,12 @@ public sealed record ResourceIdentity
     /// <summary>
     /// Initializes a resource identity.
     /// </summary>
-    public ResourceIdentity(string originalPath, string fileName, long length, string sha256)
+    public ResourceIdentity(string? originalPath, string fileName, long length, string sha256)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(originalPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
         ArgumentOutOfRangeException.ThrowIfNegative(length);
 
-        OriginalPath = Path.GetFullPath(originalPath);
+        OriginalPath = string.IsNullOrWhiteSpace(originalPath) ? null : Path.GetFullPath(originalPath);
         FileName = fileName;
         Length = length;
         Sha256 = NormalizeSha256(sha256);
