@@ -44,7 +44,7 @@ resource の ZIP entry を stream として開く。Reader 固有の `ZipArchive
 ## Extractor
 
 `YmmpxPackageExtractor.ExtractAsync` は `IYmmpxResourceContentProvider` を受け取り、
-logical project path と resource package path に従って出力先へ書き出す。
+resource package path とprojectの安全な`OriginalFileName`に従って出力先へ書き出す。
 project text は変更せず、resource は stream から `CopyToAsync` でコピーする。
 そのため動画、音声、PSD、連番 PNG を全量メモリへ読み込まない。
 
@@ -54,6 +54,7 @@ Reader は format 固有の差を common model へ正規化してから渡す。
 ### 出力安全性
 
 - package path は共有の `PackagePathValidator` で検証する。
+- project output filenameはPackagePathと混同せず、`OriginalFileName`として検証する。内部`project.ymmp`をそのままユーザー向け出力名に固定しない。
 - 出力 full path が destination root 配下にあることを Extractor でも再確認する。
 - path traversal、絶対 path、drive/UNC path は拒否する。
 - resource は `PackagePath` の ordinal 順で展開する。

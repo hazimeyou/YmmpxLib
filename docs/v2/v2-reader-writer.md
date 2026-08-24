@@ -1,10 +1,10 @@
 # v2 Reader / Writer
 
-`YmmpxV2Writer` はsource projectのcopyだけを変更してFormat 2.0 ZIPを作る。resourceのSHA-256はstreamで計算し、ZIPへのコピーもstreamで行う。source projectとsource resourceは変更しない。出力はtemporary fileを完成させてからmoveするため、失敗時に最終packageを残さない。
+`YmmpxV2Writer` はsource projectのcopyだけを変更してFormat 2.0 ZIPを作る。resourceのSHA-256はstreamで計算し、ZIPへのコピーもstreamで行う。source projectとsource resourceは変更しない。source projectのファイル名はmanifestのProject Metadataへ`OriginalFileName`として記録するが、絶対pathは記録しない。ZIP内の論理pathは引き続き`project.ymmp`である。出力はtemporary fileを完成させてからmoveするため、失敗時に最終packageを残さない。
 
 `YmmpxV2Reader` は`YmmpxFormatDetector`がSupportedV2と判定したpackageだけを開き、descriptor、manifest、project、resource metadataをcommon `LoadedYmmpxPackage` と`YmmpxPackageSession`へ変換する。resource本体は`byte[]`保持せず、sessionのstream accessで読む。入力streamの所有権は呼び出し側に残る。
 
-Resolverは`ProjectResourceReference`を受けてFilePathだけを展開先に復元し、Extractorは準備済みprojectとresource streamsをdiskへ出力する。v1/v2とも同じResolver／Extractorを使い、format分岐を持ち込まない。
+Resolverは`ProjectResourceReference`を受けてFilePathだけを展開先に復元し、Extractorは準備済みprojectとresource streamsをdiskへ出力する。`LoadedYmmpxProject.PackagePath`は内部論理path、`OriginalFileName`は出力filenameであり、Resolverは後者を保持する。v1/v2とも同じResolver／Extractorを使い、format分岐を持ち込まない。metadataなしの旧v2 packageでは`project.ymmp`を出力名に使う。
 
 CancellationはWriter、Reader、Resolver、Extractorの公開async処理で尊重する。Extractorのdefault overwrite policyは`FailIfExists`である。package全体のrollbackは対象外で、展開途中に失敗した場合に完了済みファイルは残り得る。
 
