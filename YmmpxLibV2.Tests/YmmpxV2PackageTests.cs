@@ -132,6 +132,31 @@ public sealed class YmmpxV2PackageTests : IDisposable
         Assert.Contains(updates, update => update.Stage == YmmpxV2WriteStage.Completed && update.Fraction == 1);
     }
 
+    [Fact]
+    public async Task ExcludingOneSequenceFrameExcludesTheWholeSequence()
+    {
+        var source = Path.Combine(root, "sequence-exclusion");
+        Directory.CreateDirectory(source);
+        foreach (var index in Enumerable.Range(1, 3))
+            await File.WriteAllTextAsync(Path.Combine(source, $"frame_{index}.png"), index.ToString(), TestContext.Current.CancellationToken);
+        var representative = Path.Combine(source, "frame_1.png");
+        var excludedFrame = Path.Combine(source, "frame_2.png");
+        var projectPath = Path.Combine(source, "project.ymmp");
+        await File.WriteAllTextAsync(projectPath, "{\"$type\":\"YukkuriMovieMaker.Project.Items.VideoItem, YukkuriMovieMaker\",\"FilePath\":" + System.Text.Json.JsonSerializer.Serialize(representative) + "}", TestContext.Current.CancellationToken);
+        var packagePath = Path.Combine(root, "sequence-exclusion.ymmpx");
+
+        await YmmpxV2Writer.WriteAsync(new YmmpxV2WriteRequest(projectPath, packagePath)
+        {
+            Options = new YmmpxV2WriteOptions { ExcludedResources = [excludedFrame] }
+        }, TestContext.Current.CancellationToken);
+
+        using var archive = ZipFile.OpenRead(packagePath);
+        var manifest = PackageManifestSerializer.Deserialize(await new StreamReader(archive.GetEntry(PackageManifest.FileName)!.Open()).ReadToEndAsync(TestContext.Current.CancellationToken));
+        var packagedProject = JsonNode.Parse(await new StreamReader(archive.GetEntry("project.ymmp")!.Open()).ReadToEndAsync(TestContext.Current.CancellationToken))!;
+        Assert.Empty(manifest.Resources);
+        Assert.Equal(representative, packagedProject["FilePath"]!.GetValue<string>());
+    }
+
     private sealed class ImmediateProgress(List<YmmpxV2WriteProgress> updates) : IProgress<YmmpxV2WriteProgress>
     {
         public void Report(YmmpxV2WriteProgress value) => updates.Add(value);
