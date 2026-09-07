@@ -251,6 +251,199 @@ public sealed class YmmpxPackageServiceTests
     }
 
     [Theory]
+    [InlineData("C:/source/A.psd", "resources/A.psd")]
+    [InlineData("C:/source/B.psd", "C:/source/B.psd")]
+    public void ReplaceFilePathsForPackaging_ProcessesPsdLayerReferenceWhenFilePathTextDoesNotChange(
+        string layerStatePath,
+        string expectedLayerStatePath)
+    {
+        var item = new JsonObject
+        {
+            ["FilePath"] = "resources/A.psd",
+            ["EnableLayers"] = new JsonArray(1),
+            ["EnableLayersFilePath"] = layerStatePath
+        };
+
+        string? ConvertPath(string path) => path switch
+        {
+            "resources/A.psd" => "resources/A.psd",
+            "C:/source/A.psd" => "resources/A.psd",
+            "C:/source/B.psd" => "resources/B.psd",
+            _ => null
+        };
+
+        var replaced = YmmpxProjectJson.ReplaceFilePathsForPackaging(item, ConvertPath);
+
+        Assert.Equal(0, replaced);
+        Assert.Equal("resources/A.psd", item["FilePath"]!.GetValue<string>());
+        Assert.Equal(expectedLayerStatePath, item["EnableLayersFilePath"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("resources/A.psd", true)]
+    [InlineData("resources/A.png", false)]
+    public void ReplaceFilePathsForPackaging_AddsMissingLayerReferenceWhenUnchangedResourceIsPsd(
+        string filePath,
+        bool expectsLayerStateReference)
+    {
+        var item = new JsonObject
+        {
+            ["FilePath"] = filePath,
+            ["EnableLayers"] = new JsonArray(1)
+        };
+
+        var replaced = YmmpxProjectJson.ReplaceFilePathsForPackaging(item, path => path);
+
+        Assert.Equal(0, replaced);
+        if (expectsLayerStateReference)
+            Assert.Equal(filePath, item["EnableLayersFilePath"]!.GetValue<string>());
+        else
+            Assert.Null(item["EnableLayersFilePath"]);
+    }
+
+    [Fact]
+    public void ReplaceFilePathsForPackaging_TransformsAllCaseVariantFilePathProperties()
+    {
+        var node = JsonNode.Parse("""
+        {
+          "FilePath": "C:/source/A.png",
+          "filepath": "C:/source/B.png",
+          "FILEPATH": "C:/source/C.png"
+        }
+        """)!;
+
+        var replaced = YmmpxProjectJson.ReplaceFilePathsForPackaging(
+            node,
+            path => $"resources/{Path.GetFileName(path)}");
+
+        Assert.Equal(3, replaced);
+        Assert.Equal("resources/A.png", node["FilePath"]!.GetValue<string>());
+        Assert.Equal("resources/B.png", node["filepath"]!.GetValue<string>());
+        Assert.Equal("resources/C.png", node["FILEPATH"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ReplaceFilePaths_TransformsAllCaseVariantFilePathProperties()
+    {
+        var node = JsonNode.Parse("""
+        {
+          "FilePath": "resources/A.png",
+          "filepath": "resources/B.png",
+          "FILEPATH": "resources/C.png"
+        }
+        """)!;
+        var linkMap = new Dictionary<string, string>
+        {
+            ["resources/A.png"] = "C:/extract/A.png",
+            ["resources/B.png"] = "C:/extract/B.png",
+            ["resources/C.png"] = "C:/extract/C.png"
+        };
+
+        var replaced = YmmpxProjectJson.ReplaceFilePaths(node, linkMap);
+
+        Assert.Equal(3, replaced);
+        Assert.Equal("C:/extract/A.png", node["FilePath"]!.GetValue<string>());
+        Assert.Equal("C:/extract/B.png", node["filepath"]!.GetValue<string>());
+        Assert.Equal("C:/extract/C.png", node["FILEPATH"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task PackageAndExtract_RoundTripsAllCaseVariantFilePathProperties()
+    {
+        using var workspace = new TemporaryDirectory();
+        var resourcePaths = new[] { "A.png", "B.png", "C.png" }
+            .Select(name => Path.Combine(workspace.Path, name))
+            .ToArray();
+        foreach (var resourcePath in resourcePaths)
+            File.WriteAllBytes(resourcePath, [1]);
+
+        var projectPath = Path.Combine(workspace.Path, "variants.ymmp");
+        var packagePath = Path.Combine(workspace.Path, "variants.ymmpx");
+        var extractPath = Path.Combine(workspace.Path, "extracted");
+        File.WriteAllText(projectPath, new JsonObject
+        {
+            ["FilePath"] = resourcePaths[0],
+            ["filepath"] = resourcePaths[1],
+            ["FILEPATH"] = resourcePaths[2]
+        }.ToJsonString());
+
+        using (var document = JsonDocument.Parse(File.ReadAllText(projectPath)))
+            Assert.Equal(3, YmmpxProjectJson.FindFilePaths(document.RootElement).Count());
+
+        var packaged = await YmmpxPackageService.CreatePackageAsync(
+            projectPath,
+            packagePath,
+            cancellationToken: TestContext.Current.CancellationToken);
+        using (var archive = ZipFile.OpenRead(packagePath))
+        {
+            var projectEntry = Assert.Single(archive.Entries, entry => entry.FullName.EndsWith(".ymmp", StringComparison.OrdinalIgnoreCase));
+            using var reader = new StreamReader(projectEntry.Open());
+            var packagedProject = JsonNode.Parse(reader.ReadToEnd())!;
+            Assert.Equal("resources/A.png", packagedProject["FilePath"]!.GetValue<string>());
+            Assert.Equal("resources/B.png", packagedProject["filepath"]!.GetValue<string>());
+            Assert.Equal("resources/C.png", packagedProject["FILEPATH"]!.GetValue<string>());
+        }
+
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(packagePath, extractPath);
+        var restored = JsonNode.Parse(File.ReadAllText(unpacked.ProjectFilePath))!;
+
+        Assert.Equal(3, packaged.ResourceCount);
+        Assert.Equal(3, unpacked.ReplacedPathCount);
+        Assert.True(File.Exists(restored["FilePath"]!.GetValue<string>()));
+        Assert.True(File.Exists(restored["filepath"]!.GetValue<string>()));
+        Assert.True(File.Exists(restored["FILEPATH"]!.GetValue<string>()));
+    }
+
+    [Fact]
+    public void ReplaceFilePathsForPackaging_UsesFirstFilePathPropertyAsPsdPrimary()
+    {
+        var item = JsonNode.Parse("""
+        {
+          "FilePath": "resources/A.psd",
+          "filepath": "C:/source/B.png",
+          "EnableLayers": [1],
+          "EnableLayersFilePath": "C:/source/A.psd"
+        }
+        """)!;
+
+        string? ConvertPath(string path) => path switch
+        {
+            "resources/A.psd" => "resources/A.psd",
+            "C:/source/A.psd" => "resources/A.psd",
+            "C:/source/B.png" => "resources/B.png",
+            _ => null
+        };
+
+        var replaced = YmmpxProjectJson.ReplaceFilePathsForPackaging(item, ConvertPath);
+
+        Assert.Equal(1, replaced);
+        Assert.Equal("resources/A.psd", item["FilePath"]!.GetValue<string>());
+        Assert.Equal("resources/B.png", item["filepath"]!.GetValue<string>());
+        Assert.Equal("resources/A.psd", item["EnableLayersFilePath"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ReplaceFilePathsForPackaging_TransformsStringAndNestedObjectFilePathVariants()
+    {
+        var node = JsonNode.Parse("""
+        {
+          "FilePath": "C:/source/A.png",
+          "filepath": {
+            "FilePath": "C:/source/B.png"
+          }
+        }
+        """)!;
+
+        var replaced = YmmpxProjectJson.ReplaceFilePathsForPackaging(
+            node,
+            path => $"resources/{Path.GetFileName(path)}");
+
+        Assert.Equal(2, replaced);
+        Assert.Equal("resources/A.png", node["FilePath"]!.GetValue<string>());
+        Assert.Equal("resources/B.png", node["filepath"]!["FilePath"]!.GetValue<string>());
+    }
+
+    [Theory]
     [InlineData(true, true)]
     [InlineData(true, false)]
     [InlineData(false, true)]

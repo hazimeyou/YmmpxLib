@@ -210,21 +210,33 @@ public static class YmmpxProjectJson
 
     private static int ReplaceObjectFilePath(JsonObject obj, Func<string, string?> pathConverter)
     {
-        var filePathProperty = obj.FirstOrDefault(item =>
-            item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase));
-        if (filePathProperty.Key is null ||
-            filePathProperty.Value is not JsonValue filePathValue ||
-            !filePathValue.TryGetValue<string>(out var originalPath) ||
-            string.IsNullOrWhiteSpace(originalPath))
+        var filePathProperties = obj
+            .Where(item => item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        string? primaryConvertedPath = null;
+        var replacements = new List<(string PropertyName, string ConvertedPath)>();
+        for (var index = 0; index < filePathProperties.Count; index++)
         {
-            return 0;
-        }
+            var property = filePathProperties[index];
+            if (property.Value is not JsonValue value ||
+                !value.TryGetValue<string>(out var path) ||
+                string.IsNullOrWhiteSpace(path))
+            {
+                continue;
+            }
 
-        var convertedPath = pathConverter(originalPath);
-        if (string.IsNullOrWhiteSpace(convertedPath) ||
-            string.Equals(originalPath, convertedPath, StringComparison.Ordinal))
-        {
-            return 0;
+            var convertedPath = pathConverter(path);
+            if (string.IsNullOrWhiteSpace(convertedPath))
+                continue;
+
+            // PSD layer state の primary reference は、従来どおり最初の FilePath property とする。
+            if (index == 0)
+            {
+                primaryConvertedPath = convertedPath;
+            }
+
+            if (!string.Equals(path, convertedPath, StringComparison.Ordinal))
+                replacements.Add((property.Key, convertedPath));
         }
 
         var enableLayersFilePathProperty = obj.FirstOrDefault(item =>
@@ -234,22 +246,29 @@ public static class YmmpxProjectJson
             item.Key.Equals("EnableLayerPaths", StringComparison.OrdinalIgnoreCase));
 
         // 元の FilePath と明確に同一だった参照だけを同期し、別 PSD への参照は保持する。
-        if (hasLayerState && IsPsdPath(convertedPath) && enableLayersFilePathProperty.Key is not null)
+        if (hasLayerState &&
+            primaryConvertedPath is not null &&
+            IsPsdPath(primaryConvertedPath) &&
+            enableLayersFilePathProperty.Key is not null)
         {
             if (enableLayersFilePathProperty.Value is JsonValue layerPathValue &&
                 layerPathValue.TryGetValue<string>(out var layerPath) &&
-                TryConvertToSameResource(pathConverter, convertedPath, layerPath))
+                TryConvertToSameResource(pathConverter, primaryConvertedPath, layerPath))
             {
-                obj[enableLayersFilePathProperty.Key] = convertedPath;
+                obj[enableLayersFilePathProperty.Key] = primaryConvertedPath;
             }
         }
-        else if (hasLayerState && IsPsdPath(convertedPath))
+        else if (hasLayerState &&
+            primaryConvertedPath is not null &&
+            IsPsdPath(primaryConvertedPath))
         {
-            obj["EnableLayersFilePath"] = convertedPath;
+            obj["EnableLayersFilePath"] = primaryConvertedPath;
         }
 
-        obj[filePathProperty.Key] = convertedPath;
-        return 1;
+        foreach (var replacement in replacements)
+            obj[replacement.PropertyName] = replacement.ConvertedPath;
+
+        return replacements.Count;
     }
 
     private static bool TryConvertToSameResource(
