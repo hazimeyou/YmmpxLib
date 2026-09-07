@@ -138,23 +138,13 @@ public static class YmmpxProjectJson
 
         if (node is JsonObject obj)
         {
+            count += ReplaceObjectFilePath(obj, path =>
+                TryResolveMappedPath(linkMap, path, out var resolved) ? resolved : null);
+
             foreach (var item in obj.ToList())
             {
-                if (item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
-                    item.Value is JsonValue value &&
-                    value.TryGetValue<string>(out var path))
-                {
-                    if (!string.IsNullOrWhiteSpace(path))
-                    {
-                        // 完全一致したパスだけを解決する。
-                        if (TryResolveMappedPath(linkMap, path, out var resolved))
-                        {
-                            obj[item.Key] = resolved;
-                            count++;
-                        }
-                    }
-                }
-                else if (item.Value is not null)
+                if (!item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
+                    item.Value is not null)
                 {
                     count += ReplaceFilePathsCore(item.Value, linkMap);
                 }
@@ -201,23 +191,12 @@ public static class YmmpxProjectJson
 
         if (node is JsonObject obj)
         {
+            count += ReplaceObjectFilePath(obj, pathConverter);
+
             foreach (var item in obj.ToList())
             {
-                if (item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
-                    item.Value is JsonValue value &&
-                    value.TryGetValue<string>(out var path))
-                {
-                    if (!string.IsNullOrWhiteSpace(path))
-                    {
-                        var converted = pathConverter(path);
-                        if (!string.IsNullOrWhiteSpace(converted) && !string.Equals(path, converted, StringComparison.Ordinal))
-                        {
-                            obj[item.Key] = converted;
-                            count++;
-                        }
-                    }
-                }
-                else if (item.Value is not null)
+                if (!item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
+                    item.Value is not null)
                 {
                     count += ReplaceFilePathsForPackagingCore(item.Value, pathConverter);
                 }
@@ -233,6 +212,67 @@ public static class YmmpxProjectJson
         }
 
         return count;
+    }
+
+    private static int ReplaceObjectFilePath(JsonObject obj, Func<string, string?> pathConverter)
+    {
+        var filePathProperty = obj.FirstOrDefault(item =>
+            item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase));
+        if (filePathProperty.Key is null ||
+            filePathProperty.Value is not JsonValue filePathValue ||
+            !filePathValue.TryGetValue<string>(out var originalPath) ||
+            string.IsNullOrWhiteSpace(originalPath))
+        {
+            return 0;
+        }
+
+        var convertedPath = pathConverter(originalPath);
+        if (string.IsNullOrWhiteSpace(convertedPath) ||
+            string.Equals(originalPath, convertedPath, StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        var enableLayersFilePathProperty = obj.FirstOrDefault(item =>
+            item.Key.Equals("EnableLayersFilePath", StringComparison.OrdinalIgnoreCase));
+        var hasLayerState = obj.Any(item =>
+            item.Key.Equals("EnableLayers", StringComparison.OrdinalIgnoreCase) ||
+            item.Key.Equals("EnableLayerPaths", StringComparison.OrdinalIgnoreCase));
+
+        // 元の FilePath と明確に同一だった参照だけを同期し、別 PSD への参照は保持する。
+        if (hasLayerState && IsPsdPath(originalPath) && enableLayersFilePathProperty.Key is not null)
+        {
+            if (enableLayersFilePathProperty.Value is JsonValue layerPathValue &&
+                layerPathValue.TryGetValue<string>(out var layerPath) &&
+                PathsIdentifySameResource(originalPath, layerPath))
+            {
+                obj[enableLayersFilePathProperty.Key] = convertedPath;
+            }
+        }
+        else if (hasLayerState && IsPsdPath(originalPath))
+        {
+            obj["EnableLayersFilePath"] = convertedPath;
+        }
+
+        obj[filePathProperty.Key] = convertedPath;
+        return 1;
+    }
+
+    private static bool PathsIdentifySameResource(string firstPath, string secondPath)
+    {
+        return GetPathComparer().Equals(NormalizePathKey(firstPath), NormalizePathKey(secondPath));
+    }
+
+    private static bool IsPsdPath(string path)
+    {
+        try
+        {
+            return Path.GetExtension(path).Equals(".psd", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     private static string NormalizePathKey(string path)
