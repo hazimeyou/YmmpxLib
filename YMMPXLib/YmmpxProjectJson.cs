@@ -143,11 +143,8 @@ public static class YmmpxProjectJson
 
             foreach (var item in obj.ToList())
             {
-                if (!item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
-                    item.Value is not null)
-                {
+                if (item.Value is not null)
                     count += ReplaceFilePathsCore(item.Value, linkMap);
-                }
             }
         }
         else if (node is JsonArray arr)
@@ -195,11 +192,8 @@ public static class YmmpxProjectJson
 
             foreach (var item in obj.ToList())
             {
-                if (!item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
-                    item.Value is not null)
-                {
+                if (item.Value is not null)
                     count += ReplaceFilePathsForPackagingCore(item.Value, pathConverter);
-                }
             }
         }
         else if (node is JsonArray arr)

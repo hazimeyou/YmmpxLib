@@ -152,6 +152,104 @@ public sealed class YmmpxPackageServiceTests
         Assert.Equal("C:/work/extract/resources/a.txt", node["FilePath"]!.GetValue<string>());
     }
 
+    [Fact]
+    public void ReplaceFilePaths_TraversesObjectAndArrayStoredInFilePathProperty()
+    {
+        var node = JsonNode.Parse("""
+        {
+          "FilePath": {
+            "FilePath": "resources/object.png"
+          },
+          "Wrapper": {
+            "FilePath": [
+              { "FilePath": "resources/array.png" }
+            ]
+          }
+        }
+        """)!;
+        var linkMap = new Dictionary<string, string>
+        {
+            ["resources/object.png"] = "C:/extract/resources/object.png",
+            ["resources/array.png"] = "C:/extract/resources/array.png"
+        };
+
+        var replaced = YmmpxProjectJson.ReplaceFilePaths(node, linkMap);
+
+        Assert.Equal(2, replaced);
+        Assert.Equal("C:/extract/resources/object.png", node["FilePath"]!["FilePath"]!.GetValue<string>());
+        Assert.Equal("C:/extract/resources/array.png", node["Wrapper"]!["FilePath"]![0]!["FilePath"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ReplaceFilePathsForPackaging_TraversesObjectAndArrayStoredInFilePathProperty()
+    {
+        var node = JsonNode.Parse("""
+        {
+          "FilePath": {
+            "FilePath": "C:/source/object.png"
+          },
+          "Wrapper": {
+            "FilePath": [
+              { "FilePath": "C:/source/array.png" }
+            ]
+          }
+        }
+        """)!;
+
+        var replaced = YmmpxProjectJson.ReplaceFilePathsForPackaging(
+            node,
+            path => path switch
+            {
+                "C:/source/object.png" => "resources/object.png",
+                "C:/source/array.png" => "resources/array.png",
+                _ => null
+            });
+
+        Assert.Equal(2, replaced);
+        Assert.Equal("resources/object.png", node["FilePath"]!["FilePath"]!.GetValue<string>());
+        Assert.Equal("resources/array.png", node["Wrapper"]!["FilePath"]![0]!["FilePath"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task PackageAndExtract_RoundTripsNestedFilePathsUnderNonStringFilePathProperties()
+    {
+        using var workspace = new TemporaryDirectory();
+        var objectResourcePath = Path.Combine(workspace.Path, "object.png");
+        var arrayResourcePath = Path.Combine(workspace.Path, "array.png");
+        var projectPath = Path.Combine(workspace.Path, "nested.ymmp");
+        var packagePath = Path.Combine(workspace.Path, "nested.ymmpx");
+        var extractPath = Path.Combine(workspace.Path, "extracted");
+        File.WriteAllBytes(objectResourcePath, [1]);
+        File.WriteAllBytes(arrayResourcePath, [2]);
+        File.WriteAllText(projectPath, new JsonObject
+        {
+            ["FilePath"] = new JsonObject { ["FilePath"] = objectResourcePath },
+            ["Wrapper"] = new JsonObject
+            {
+                ["FilePath"] = new JsonArray
+                {
+                    new JsonObject { ["FilePath"] = arrayResourcePath }
+                }
+            }
+        }.ToJsonString());
+
+        var packaged = await YmmpxPackageService.CreatePackageAsync(
+            projectPath,
+            packagePath,
+            cancellationToken: TestContext.Current.CancellationToken);
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(packagePath, extractPath);
+        var restored = JsonNode.Parse(File.ReadAllText(unpacked.ProjectFilePath))!;
+        var restoredObjectPath = restored["FilePath"]!["FilePath"]!.GetValue<string>();
+        var restoredArrayPath = restored["Wrapper"]!["FilePath"]![0]!["FilePath"]!.GetValue<string>();
+
+        Assert.Equal(2, packaged.ResourceCount);
+        Assert.Equal(2, unpacked.ReplacedPathCount);
+        Assert.True(File.Exists(restoredObjectPath));
+        Assert.True(File.Exists(restoredArrayPath));
+        Assert.StartsWith(Path.GetFullPath(extractPath), restoredObjectPath, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(Path.GetFullPath(extractPath), restoredArrayPath, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData(true, true)]
     [InlineData(true, false)]
