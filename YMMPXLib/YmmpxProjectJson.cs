@@ -240,7 +240,7 @@ public static class YmmpxProjectJson
             item.Key.Equals("EnableLayerPaths", StringComparison.OrdinalIgnoreCase));
 
         // 元の FilePath と明確に同一だった参照だけを同期し、別 PSD への参照は保持する。
-        if (hasLayerState && IsPsdPath(originalPath) && enableLayersFilePathProperty.Key is not null)
+        if (hasLayerState && IsPsdPath(convertedPath) && enableLayersFilePathProperty.Key is not null)
         {
             if (enableLayersFilePathProperty.Value is JsonValue layerPathValue &&
                 layerPathValue.TryGetValue<string>(out var layerPath) &&
@@ -249,7 +249,7 @@ public static class YmmpxProjectJson
                 obj[enableLayersFilePathProperty.Key] = convertedPath;
             }
         }
-        else if (hasLayerState && IsPsdPath(originalPath))
+        else if (hasLayerState && IsPsdPath(convertedPath))
         {
             obj["EnableLayersFilePath"] = convertedPath;
         }

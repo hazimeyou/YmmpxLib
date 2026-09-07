@@ -225,6 +225,57 @@ public sealed class YmmpxPackageServiceTests
         Assert.Null(item["EnableLayersFilePath"]);
     }
 
+    [Theory]
+    [InlineData("%PSD_FILE%", "resources/character.psd", true)]
+    [InlineData("%RESOURCE_FILE%", "resources/image.png", false)]
+    public void ReplaceFilePathsForPackaging_UsesConvertedPathToDeterminePsd(
+        string originalPath,
+        string convertedPath,
+        bool expectsLayerStateReference)
+    {
+        var item = new JsonObject
+        {
+            ["FilePath"] = originalPath,
+            ["EnableLayers"] = new JsonArray(1)
+        };
+
+        YmmpxProjectJson.ReplaceFilePathsForPackaging(item, _ => convertedPath);
+
+        Assert.Equal(convertedPath, item["FilePath"]!.GetValue<string>());
+        if (expectsLayerStateReference)
+            Assert.Equal(convertedPath, item["EnableLayersFilePath"]!.GetValue<string>());
+        else
+            Assert.Null(item["EnableLayersFilePath"]);
+    }
+
+    [Theory]
+    [InlineData("C:/source/character.psd", "resources/character.psd")]
+    [InlineData("%PSD_FILE_B%", "%PSD_FILE_B%")]
+    public void ReplaceFilePathsForPackaging_UsesConvertedPsdPathForExistingReference(
+        string layerStatePath,
+        string expectedLayerStatePath)
+    {
+        var item = new JsonObject
+        {
+            ["FilePath"] = "%PSD_FILE_A%",
+            ["EnableLayers"] = new JsonArray(1),
+            ["EnableLayersFilePath"] = layerStatePath
+        };
+
+        string? ConvertPath(string path) => path switch
+        {
+            "%PSD_FILE_A%" => "resources/character.psd",
+            "C:/source/character.psd" => "resources/character.psd",
+            "%PSD_FILE_B%" => "resources/B.psd",
+            _ => null
+        };
+
+        YmmpxProjectJson.ReplaceFilePathsForPackaging(item, ConvertPath);
+
+        Assert.Equal("resources/character.psd", item["FilePath"]!.GetValue<string>());
+        Assert.Equal(expectedLayerStatePath, item["EnableLayersFilePath"]!.GetValue<string>());
+    }
+
     [Fact]
     public void ReplaceFilePathsForPackaging_DoesNotUpdateNonPsdLayerLikeReference()
     {
