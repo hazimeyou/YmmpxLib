@@ -5,6 +5,9 @@
 ### Added
 - 動画アイテムとして使用する連番 PNG のパッケージ化に対応。
 
+### Fixed
+- PSD のレイヤー状態があるとき、`EnableLayersFilePath` を `FilePath` と同じリソースに保つよう修正。
+
 ## 1.0.0 - 2026-06-12
 
 ### Added

@@ -138,26 +138,13 @@ public static class YmmpxProjectJson
 
         if (node is JsonObject obj)
         {
+            count += ReplaceObjectFilePath(obj, path =>
+                TryResolveMappedPath(linkMap, path, out var resolved) ? resolved : null);
+
             foreach (var item in obj.ToList())
             {
-                if (item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
-                    item.Value is JsonValue value &&
-                    value.TryGetValue<string>(out var path))
-                {
-                    if (!string.IsNullOrWhiteSpace(path))
-                    {
-                        // 完全一致したパスだけを解決する。
-                        if (TryResolveMappedPath(linkMap, path, out var resolved))
-                        {
-                            obj[item.Key] = resolved;
-                            count++;
-                        }
-                    }
-                }
-                else if (item.Value is not null)
-                {
+                if (item.Value is not null)
                     count += ReplaceFilePathsCore(item.Value, linkMap);
-                }
             }
         }
         else if (node is JsonArray arr)
@@ -201,26 +188,12 @@ public static class YmmpxProjectJson
 
         if (node is JsonObject obj)
         {
+            count += ReplaceObjectFilePath(obj, pathConverter);
+
             foreach (var item in obj.ToList())
             {
-                if (item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
-                    item.Value is JsonValue value &&
-                    value.TryGetValue<string>(out var path))
-                {
-                    if (!string.IsNullOrWhiteSpace(path))
-                    {
-                        var converted = pathConverter(path);
-                        if (!string.IsNullOrWhiteSpace(converted) && !string.Equals(path, converted, StringComparison.Ordinal))
-                        {
-                            obj[item.Key] = converted;
-                            count++;
-                        }
-                    }
-                }
-                else if (item.Value is not null)
-                {
+                if (item.Value is not null)
                     count += ReplaceFilePathsForPackagingCore(item.Value, pathConverter);
-                }
             }
         }
         else if (node is JsonArray arr)
@@ -233,6 +206,93 @@ public static class YmmpxProjectJson
         }
 
         return count;
+    }
+
+    private static int ReplaceObjectFilePath(JsonObject obj, Func<string, string?> pathConverter)
+    {
+        var filePathProperties = obj
+            .Where(item => item.Key.Equals("FilePath", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        string? primaryConvertedPath = null;
+        var replacements = new List<(string PropertyName, string ConvertedPath)>();
+        for (var index = 0; index < filePathProperties.Count; index++)
+        {
+            var property = filePathProperties[index];
+            if (property.Value is not JsonValue value ||
+                !value.TryGetValue<string>(out var path) ||
+                string.IsNullOrWhiteSpace(path))
+            {
+                continue;
+            }
+
+            var convertedPath = pathConverter(path);
+            if (string.IsNullOrWhiteSpace(convertedPath))
+                continue;
+
+            // PSD layer state の primary reference は、従来どおり最初の FilePath property とする。
+            if (index == 0)
+            {
+                primaryConvertedPath = convertedPath;
+            }
+
+            if (!string.Equals(path, convertedPath, StringComparison.Ordinal))
+                replacements.Add((property.Key, convertedPath));
+        }
+
+        var enableLayersFilePathProperty = obj.FirstOrDefault(item =>
+            item.Key.Equals("EnableLayersFilePath", StringComparison.OrdinalIgnoreCase));
+        var hasLayerState = obj.Any(item =>
+            item.Key.Equals("EnableLayers", StringComparison.OrdinalIgnoreCase) ||
+            item.Key.Equals("EnableLayerPaths", StringComparison.OrdinalIgnoreCase));
+
+        // 元の FilePath と明確に同一だった参照だけを同期し、別 PSD への参照は保持する。
+        if (hasLayerState &&
+            primaryConvertedPath is not null &&
+            IsPsdPath(primaryConvertedPath) &&
+            enableLayersFilePathProperty.Key is not null)
+        {
+            if (enableLayersFilePathProperty.Value is JsonValue layerPathValue &&
+                layerPathValue.TryGetValue<string>(out var layerPath) &&
+                TryConvertToSameResource(pathConverter, primaryConvertedPath, layerPath))
+            {
+                obj[enableLayersFilePathProperty.Key] = primaryConvertedPath;
+            }
+        }
+        else if (hasLayerState &&
+            primaryConvertedPath is not null &&
+            IsPsdPath(primaryConvertedPath))
+        {
+            obj["EnableLayersFilePath"] = primaryConvertedPath;
+        }
+
+        foreach (var replacement in replacements)
+            obj[replacement.PropertyName] = replacement.ConvertedPath;
+
+        return replacements.Count;
+    }
+
+    private static bool TryConvertToSameResource(
+        Func<string, string?> pathConverter,
+        string convertedFilePath,
+        string layerStatePath)
+    {
+        var convertedLayerStatePath = pathConverter(layerStatePath);
+        return !string.IsNullOrWhiteSpace(convertedLayerStatePath) &&
+            GetPathComparer().Equals(
+                NormalizePathKey(convertedFilePath),
+                NormalizePathKey(convertedLayerStatePath));
+    }
+
+    private static bool IsPsdPath(string path)
+    {
+        try
+        {
+            return Path.GetExtension(path).Equals(".psd", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     private static string NormalizePathKey(string path)

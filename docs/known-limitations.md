@@ -1,6 +1,7 @@
 # Known Limitations
 
 - 対応対象は YMM4 プロジェクト JSON 内の `FilePath` です。
+- PSD の `EnableLayers` または `EnableLayerPaths` がある場合、`EnableLayersFilePath` は `FilePath` と同じリソース参照として同梱・展開時に同期します。同一性は相対 path などを解決した後の resource path で判定します。欠落値はこの条件でのみ生成し、別の PSD を指す既存値は上書きしません。
 - VideoItem の連番 PNG は、同じフォルダ内で prefix・末尾数値・`.png` 拡張子が一致する実在ファイルを収集します。数値部分の桁数は連番グループを分けません。YMM4 側の連番判定実装は SDK 参照 DLL から確認できていないため、PNG 以外の連番画像形式は対象外です。
 - 未知の YMM4 内部形式は完全には保証しません。
 - YMM4 DLL はリポジトリに同梱しません。
