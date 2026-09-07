@@ -203,7 +203,9 @@ public sealed class YmmpxPackageServiceTests
         }
         """)!;
 
-        YmmpxProjectJson.ReplaceFilePathsForPackaging(item, _ => "resources/A.psd");
+        YmmpxProjectJson.ReplaceFilePathsForPackaging(
+            item,
+            path => path == filePath ? "resources/A.psd" : null);
 
         Assert.Equal("resources/A.psd", item["FilePath"]!.GetValue<string>());
         Assert.Equal(expectedLayerStatePath, item["EnableLayersFilePath"]!.GetValue<string>());
@@ -258,8 +260,60 @@ public sealed class YmmpxPackageServiceTests
         Assert.Equal("resources/B.psd", items[1]!["EnableLayersFilePath"]!.GetValue<string>());
     }
 
+    [Theory]
+    [InlineData("C:/project/assets/character.psd", "assets/character.psd")]
+    [InlineData("assets/character.psd", "C:/project/assets/character.psd")]
+    [InlineData("C:/project/assets/character.psd", "sub/../assets/character.psd")]
+    [InlineData("C:/project/素材/琴葉葵/立ち絵.psd", "素材\\琴葉葵\\立ち絵.psd")]
+    public void ReplaceFilePathsForPackaging_UsesConvertedResourceIdentity(
+        string filePath,
+        string layerStatePath)
+    {
+        var item = new JsonObject
+        {
+            ["FilePath"] = filePath,
+            ["EnableLayers"] = new JsonArray(1),
+            ["EnableLayersFilePath"] = layerStatePath
+        };
+
+        string? ConvertPath(string path)
+        {
+            var normalized = Path.GetFullPath(path.Replace('/', '\\'), "C:\\project");
+            return normalized.EndsWith("character.psd", StringComparison.OrdinalIgnoreCase) ||
+                normalized.EndsWith("立ち絵.psd", StringComparison.OrdinalIgnoreCase)
+                ? "resources/character.psd"
+                : null;
+        }
+
+        YmmpxProjectJson.ReplaceFilePathsForPackaging(item, ConvertPath);
+
+        Assert.Equal("resources/character.psd", item["FilePath"]!.GetValue<string>());
+        Assert.Equal("resources/character.psd", item["EnableLayersFilePath"]!.GetValue<string>());
+    }
+
     [Fact]
-    public async Task PackageAndExtract_RoundTripsCharacterSettingPsdLayerState()
+    public void ReplaceFilePathsForPackaging_DoesNotMatchSameFileNameFromDifferentDirectories()
+    {
+        var item = JsonNode.Parse("""
+        {
+          "FilePath": "C:/A/character.psd",
+          "EnableLayers": [1],
+          "EnableLayersFilePath": "C:/B/character.psd"
+        }
+        """)!;
+
+        YmmpxProjectJson.ReplaceFilePathsForPackaging(
+            item,
+            path => path.StartsWith("C:/A/", StringComparison.Ordinal) ? "resources/A.psd" : "resources/B.psd");
+
+        Assert.Equal("resources/A.psd", item["FilePath"]!.GetValue<string>());
+        Assert.Equal("C:/B/character.psd", item["EnableLayersFilePath"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PackageAndExtract_RoundTripsCharacterSettingPsdLayerState(bool filePathIsRelative)
     {
         using var workspace = new TemporaryDirectory();
         var resourceDirectory = Path.Combine(workspace.Path, "素材", "琴葉葵");
@@ -270,6 +324,7 @@ public sealed class YmmpxPackageServiceTests
         var extractPath = Path.Combine(workspace.Path, "extracted");
         File.WriteAllBytes(resourcePath, [0x50, 0x53, 0x44]);
         var originalLayerPaths = new JsonArray("root\u001cface\u001deyes");
+        var relativeResourcePath = Path.GetRelativePath(workspace.Path, resourcePath);
         var project = new JsonObject
         {
             ["Items"] = new JsonArray
@@ -277,9 +332,10 @@ public sealed class YmmpxPackageServiceTests
                 new JsonObject
                 {
                     ["$type"] = "CharacterSettingStyle",
-                    ["FilePath"] = resourcePath,
+                    ["FilePath"] = filePathIsRelative ? relativeResourcePath : resourcePath,
                     ["EnableLayers"] = new JsonArray(12, 34),
                     ["EnableLayerPaths"] = originalLayerPaths.DeepClone(),
+                    ["EnableLayersFilePath"] = filePathIsRelative ? resourcePath : relativeResourcePath,
                     ["UnknownProperty"] = "keep"
                 }
             }

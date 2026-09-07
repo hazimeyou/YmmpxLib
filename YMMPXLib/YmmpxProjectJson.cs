@@ -244,7 +244,7 @@ public static class YmmpxProjectJson
         {
             if (enableLayersFilePathProperty.Value is JsonValue layerPathValue &&
                 layerPathValue.TryGetValue<string>(out var layerPath) &&
-                PathsIdentifySameResource(originalPath, layerPath))
+                TryConvertToSameResource(pathConverter, convertedPath, layerPath))
             {
                 obj[enableLayersFilePathProperty.Key] = convertedPath;
             }
@@ -258,9 +258,16 @@ public static class YmmpxProjectJson
         return 1;
     }
 
-    private static bool PathsIdentifySameResource(string firstPath, string secondPath)
+    private static bool TryConvertToSameResource(
+        Func<string, string?> pathConverter,
+        string convertedFilePath,
+        string layerStatePath)
     {
-        return GetPathComparer().Equals(NormalizePathKey(firstPath), NormalizePathKey(secondPath));
+        var convertedLayerStatePath = pathConverter(layerStatePath);
+        return !string.IsNullOrWhiteSpace(convertedLayerStatePath) &&
+            GetPathComparer().Equals(
+                NormalizePathKey(convertedFilePath),
+                NormalizePathKey(convertedLayerStatePath));
     }
 
     private static bool IsPsdPath(string path)
