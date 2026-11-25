@@ -10,7 +10,7 @@ internal sealed class PackageOutputInputGuard
     private readonly string[] inputPaths;
     private readonly FileIdentity? originalOutput;
 
-    private PackageOutputInputGuard(string outputPath, string[] inputPaths)
+    private PackageOutputInputGuard(string outputPath, string[] inputPaths, IEnumerable<string>? additionalInputs)
     {
         this.outputPath = outputPath;
         this.inputPaths = inputPaths;
@@ -20,15 +20,20 @@ internal sealed class PackageOutputInputGuard
 
         originalOutput = Identify(outputPath);
         if (originalOutput is { } existingOutput)
+        {
+            if (additionalInputs is not null)
+                this.inputPaths = inputPaths.Concat(additionalInputs).Distinct(StringComparer.Ordinal).ToArray();
             CheckInputIdentities(existingOutput);
+        }
     }
 
     internal static PackageOutputInputGuard Create(
-        string outputPath, string projectPath, IEnumerable<string> referencedInputPaths)
+        string outputPath, string projectPath, IEnumerable<string> referencedInputPaths,
+        IEnumerable<string>? additionalInputs = null)
     {
         // A Windows directory may use case-sensitive names even though the lexical guard is conservative.
         var inputs = referencedInputPaths.Prepend(projectPath).Distinct(StringComparer.Ordinal).ToArray();
-        return new PackageOutputInputGuard(outputPath, inputs);
+        return new PackageOutputInputGuard(outputPath, inputs, additionalInputs);
     }
 
     // Return whether the original, unrelated destination can be replaced.

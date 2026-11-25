@@ -114,7 +114,7 @@ Console.WriteLine(unpack.ProjectFilePath);
 
 ## 補足
 
-- 展開時は `links.json` を優先し、互換用に `manifest.json`、`links.txt` も読み込みます
+- 展開時は `links.json` を優先し、互換用に `manifest.json`、`links.txt` も読み込みます。混在する場合の補完条件は [既知の制約](docs/known-limitations.md#新旧リンク定義が混在するパッケージ) を参照してください
 - パッケージには `_ymmpx_project_path.txt` を含め、元のプロジェクトファイル名を保持します
 - 出力ファイル名や展開先は、既存ファイル・既存フォルダと衝突しないように調整されます
 

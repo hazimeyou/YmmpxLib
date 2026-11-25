@@ -1503,6 +1503,204 @@ public sealed class YmmpxPackageServiceTests
     }
 
     [Fact]
+    public void ExtractAndRestoreProject_SupplementsOnlyUnambiguousSelfLinksFromOlderDefinitions()
+    {
+        using var workspace = new TemporaryDirectory();
+        var archivePath = Path.Combine(workspace.Path, "mixed.ymmpx");
+        CreateArchive(archivePath, archive =>
+        {
+            WriteEntry(archive, "project.ymmp", """
+                {"Items":[{"FilePath":"resources/a.txt"},{"FilePath":"resources/b.txt"},
+                  {"FilePath":"old/b.txt"},{"FilePath":"resources/blocked.txt"},
+                  {"FilePath":"resources/conflict.txt"},{"FilePath":"original.txt"},
+                  {"FilePath":"outside.txt"},{"FilePath":"missing.txt"},{"FilePath":"resources/invalid.txt"}]}
+                """);
+            foreach (var file in new[] { "a", "b", "blocked", "conflict", "invalid" })
+                WriteEntry(archive, $"resources/{file}.txt", file);
+            WriteEntry(archive, "links.json", """
+                {"resources/a.txt":"resources/a.txt","resources/blocked.txt":"resources/not-there.txt",
+                 "original.txt":"resources/a.txt","resources/invalid.txt":false}
+                """);
+            WriteEntry(archive, "manifest.json", """
+                {"Files":[
+                  {"OriginalPath":"resources/b.txt","BundlePath":"resources/b.txt"},
+                  {"OriginalPath":"old/b.txt","BundlePath":"resources/b.txt"},
+                  {"OriginalPath":"resources/blocked.txt","BundlePath":"resources/blocked.txt"},
+                  {"OriginalPath":"resources/invalid.txt","BundlePath":"resources/invalid.txt"},
+                  {"OriginalPath":"resources/conflict.txt","BundlePath":"resources/conflict.txt"},
+                  {"OriginalPath":"original.txt","BundlePath":"resources/b.txt"},
+                  {"OriginalPath":"outside.txt","BundlePath":"../outside.txt"},
+                  {"OriginalPath":"missing.txt","BundlePath":"resources/not-there.txt"}]}
+                """);
+            WriteEntry(archive, "links.txt", """
+                resources/b.txt,resources/b.txt
+                resources\b.txt,resources/b.txt
+                resources/conflict.txt,resources/b.txt
+                unparseable
+                """);
+        });
+
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(archivePath, Path.Combine(workspace.Path, "unpack"));
+        var items = JsonNode.Parse(File.ReadAllText(unpacked.ProjectFilePath))!["Items"]!.AsArray();
+        string GetReference(int index) => items[index]!["FilePath"]!.GetValue<string>();
+        Assert.Equal(3, unpacked.ReplacedPathCount);
+        Assert.Equal(3, unpacked.LinkMap.Count);
+        Assert.Equal("a", File.ReadAllText(GetReference(0)));
+        Assert.Equal("b", File.ReadAllText(GetReference(1)));
+        Assert.Equal("old/b.txt", GetReference(2));
+        Assert.Equal("resources/blocked.txt", GetReference(3));
+        Assert.Equal("resources/conflict.txt", GetReference(4));
+        Assert.Equal("a", File.ReadAllText(GetReference(5)));
+        Assert.Equal("outside.txt", GetReference(6));
+        Assert.Equal("missing.txt", GetReference(7));
+        Assert.Equal("resources/invalid.txt", GetReference(8));
+    }
+
+    [Fact]
+    public void ExtractAndRestoreProject_DoesNotChooseBetweenConflictingEntriesInPreferredFormat()
+    {
+        using var workspace = new TemporaryDirectory();
+        var archivePath = Path.Combine(workspace.Path, "ambiguous.ymmpx");
+        CreateArchive(archivePath, archive =>
+        {
+            WriteEntry(archive, "project.ymmp", """{"FilePath":"original.txt"}""");
+            WriteEntry(archive, "resources/a.txt", "a");
+            WriteEntry(archive, "resources/b.txt", "b");
+            WriteEntry(archive, "links.json", """{"original.txt":"resources/a.txt","original.txt":"resources/b.txt"}""");
+            WriteEntry(archive, "links.txt", "original.txt,resources/a.txt");
+        });
+
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(archivePath, Path.Combine(workspace.Path, "unpack"));
+        var restored = JsonNode.Parse(File.ReadAllText(unpacked.ProjectFilePath))!;
+
+        Assert.Equal(0, unpacked.ReplacedPathCount);
+        Assert.Empty(unpacked.LinkMap);
+        Assert.Equal("original.txt", restored["FilePath"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ExtractAndRestoreProject_UsesLegacyManifestWhenCurrentLinkJsonIsInvalid()
+    {
+        using var workspace = new TemporaryDirectory();
+        var archivePath = Path.Combine(workspace.Path, "legacy.ymmpx");
+        CreateArchive(archivePath, archive =>
+        {
+            WriteEntry(archive, "project.ymmp", """{"FilePath":"old/a.txt"}""");
+            WriteEntry(archive, "resources/a.txt", "legacy contents");
+            WriteEntry(archive, "links.json", "{");
+            WriteEntry(archive, "manifest.json", """
+                {"Files":[{"OriginalPath":"old/a.txt","BundlePath":"resources/a.txt"}]}
+                """);
+        });
+
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(archivePath, Path.Combine(workspace.Path, "unpack"));
+        var restored = JsonNode.Parse(File.ReadAllText(unpacked.ProjectFilePath))!;
+        Assert.Equal(1, unpacked.ReplacedPathCount);
+        Assert.Equal("legacy contents", File.ReadAllText(restored["FilePath"]!.GetValue<string>()));
+    }
+
+    [Theory]
+    [InlineData(true, 4)]
+    [InlineData(false, 1)]
+    public async Task PackageAndExtract_UsesOnlyReferencesInRetainedProjectData(
+        bool includeProjectUiSettings, int expectedCount)
+    {
+        using var workspace = new TemporaryDirectory();
+        WriteTestFiles(workspace.Path, "shared.txt", "ui.png", "ui01.png", "ui02.png");
+        var project = Path.Combine(workspace.Path, "original.ymmp");
+        File.WriteAllText(project, """
+            {"FilePath":"shared.txt","LayoutXml":{"FilePath":"ui.png"},"ToolStates":{"Items":[
+               {"FilePath":"shared.txt"},
+               {"$type":"YukkuriMovieMaker.Project.Items.VideoItem, YukkuriMovieMaker","FilePath":"ui01.png"}
+            ]}}
+            """);
+
+        var archive = Path.Combine(workspace.Path, "sample.ymmpx");
+        var packed = await YmmpxPackageService.CreatePackageAsync(
+            project, archive, options: new YmmpxPackagingOptions { IncludeProjectUiSettings = includeProjectUiSettings },
+            cancellationToken: TestContext.Current.CancellationToken);
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(archive, Path.Combine(workspace.Path, "unpack"));
+        var restored = JsonNode.Parse(File.ReadAllText(unpacked.ProjectFilePath))!;
+
+        Assert.Equal(expectedCount, packed.ResourceCount);
+        Assert.Equal(expectedCount, packed.FileMap.Count);
+        Assert.Equal(expectedCount, unpacked.LinkMap.Count);
+        Assert.Equal(includeProjectUiSettings, restored["LayoutXml"] is not null);
+        Assert.Equal(includeProjectUiSettings, restored["ToolStates"] is not null);
+        Assert.True(File.Exists(restored["FilePath"]!.GetValue<string>()));
+        Assert.Equal(includeProjectUiSettings, packed.FileMap.ContainsKey("ui.png"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreatePackageAsync_DoesNotCollectSequenceFromUnavailableRepresentative(bool excludedRepresentative)
+    {
+        using var workspace = new TemporaryDirectory();
+        WriteTestFiles(workspace.Path, "frame02.png", "frame03.png");
+        var excluded = new HashSet<string>();
+        if (excludedRepresentative)
+        {
+            WriteTestFiles(workspace.Path, "frame01.png");
+            excluded.Add("frame01.png");
+        }
+        var project = Path.Combine(workspace.Path, "original.ymmp");
+        File.WriteAllText(project, CreateProjectJson(("VideoItem", "frame01.png"), ("ImageItem", "frame02.png")));
+
+        var archive = Path.Combine(workspace.Path, "sample.ymmpx");
+        var packed = await YmmpxPackageService.CreatePackageAsync(
+            project, archive, excluded, cancellationToken: TestContext.Current.CancellationToken);
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(archive, Path.Combine(workspace.Path, "unpack"));
+        Assert.Equal("resources/frame02.png", Assert.Single(packed.FileMap).Value);
+        Assert.Equal(1, unpacked.ReplacedPathCount);
+        Assert.Contains("\"FilePath\": \"frame01.png\"", File.ReadAllText(unpacked.ProjectFilePath), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("excluded")]
+    [InlineData("missing")]
+    [InlineData("removed-ui")]
+    public async Task CreatePackageAsync_ProtectsUnbundledSequenceSiblingsFromOutputOverwrite(string condition)
+    {
+        using var workspace = new TemporaryDirectory();
+        WriteTestFiles(workspace.Path, "frame02.png", "frame03.png");
+        if (condition != "missing")
+            WriteTestFiles(workspace.Path, "frame01.png");
+        var sibling = Path.Combine(workspace.Path, "frame02.png");
+        var original = File.ReadAllBytes(sibling);
+        var project = Path.Combine(workspace.Path, "original.ymmp");
+        var projectJson = JsonNode.Parse(CreateProjectJson(("VideoItem", "frame01.png")))!;
+        if (condition == "removed-ui")
+            projectJson = new JsonObject { ["ToolStates"] = projectJson };
+        File.WriteAllText(project, projectJson.ToJsonString());
+        var exclusions = condition == "excluded" ? new HashSet<string> { "frame01.png" } : null;
+
+        await Assert.ThrowsAsync<ArgumentException>(() => YmmpxPackageService.CreatePackageAsync(
+            project, sibling, exclusions, new YmmpxPackagingOptions { IncludeProjectUiSettings = condition != "removed-ui" },
+            cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(original, File.ReadAllBytes(sibling));
+    }
+
+    [Fact]
+    public async Task CreatePackageAsync_PreservesExistingSequenceMembersAndFilenameRuleWithGapsAndExclusions()
+    {
+        using var workspace = new TemporaryDirectory();
+        WriteTestFiles(workspace.Path, "frame01.png", "frame03.png", "frame04.png", "frame99.png", "other02.png");
+        var project = Path.Combine(workspace.Path, "original.ymmp");
+        File.WriteAllText(project, CreateProjectJson(("VideoItem", "frame01.png"), ("VideoItem", "frame03.png")));
+
+        var archive = Path.Combine(workspace.Path, "sample.ymmpx");
+        var packed = await YmmpxPackageService.CreatePackageAsync(
+            project, archive, new HashSet<string> { "frame04.png" }, cancellationToken: TestContext.Current.CancellationToken);
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(archive, Path.Combine(workspace.Path, "unpack"));
+
+        Assert.Equal(new[] { "resources/sequence_1/frame01.png", "resources/sequence_1/frame03.png",
+                             "resources/sequence_1/frame99.png" }, packed.FileMap.Values.Order());
+        Assert.Equal(2, unpacked.ReplacedPathCount);
+    }
+
+    [Fact]
     public async Task CreatePackageAsync_PackagesOnlyVideoItemPngSequenceAndRestoresRepresentativePath()
     {
         using var workspace = new TemporaryDirectory();

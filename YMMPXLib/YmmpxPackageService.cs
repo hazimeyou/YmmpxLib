@@ -63,41 +63,42 @@ public static class YmmpxPackageService
         var projectText = await File.ReadAllTextAsync(projectFilePath, cancellationToken).ConfigureAwait(false);
         options ??= new YmmpxPackagingOptions();
 
-        // 元 JSON を解析し、参照ファイル (FilePath) の一覧を作る。
+        // 原本保護は入力全体を対象にし、格納候補と衝突回避は同梱する JSON を対象にする。
         using var document = JsonDocument.Parse(projectText);
-        var references = YmmpxProjectJson
-            .FindFilePaths(document.RootElement)
-            .Select(originalPath => new ResourceCandidate(
-                originalPath,
-                NormalizePath(projectDirectory, originalPath),
-                null))
+        var root = document.RootElement;
+        var includeUi = options.IncludeProjectUiSettings;
+        var sourceReferences = ReadReferences(includeProjectUiSettings: true);
+        var references = includeUi ? sourceReferences : ReadReferences(includeProjectUiSettings: false);
+
+        var visitedSequenceGroups = new HashSet<string>(GetPathComparer());
+        var sequenceFiles = YmmpxProjectJson.FindVideoItemFilePaths(root, includeUi)
+            .Select(path => NormalizePath(projectDirectory, path))
+            .OfType<string>()
+            .Where(CanPackage)
+            .SelectMany(path => FindPngSequenceFiles(path, visitedSequenceGroups))
             .ToList();
-        var allCandidates = references.Concat(YmmpxProjectJson
-                .FindVideoItemFilePaths(document.RootElement)
-                .SelectMany(originalPath => FindPngSequenceFiles(projectDirectory, originalPath)))
-            .ToList();
-        var protectedPaths = allCandidates.Select(candidate => candidate.ResolvedPath)
-            .Concat(YmmpxProjectJson.FindPsdLayerFilePaths(document.RootElement)
-                .Select(path => NormalizePath(projectDirectory, path)))
+        var protectedPaths = sourceReferences.Concat(sequenceFiles).Select(candidate => candidate.ResolvedPath)
+            .Concat(YmmpxProjectJson.FindPsdLayerFilePaths(root).Select(path => NormalizePath(projectDirectory, path)))
             .OfType<string>();
-        var outputGuard = PackageOutputInputGuard.Create(normalizedOutputPath, normalizedProjectPath, protectedPaths);
+        // 除外・欠損した代表や削除する UI の連番でも、既存出力の上書き照合には兄弟素材を含める。
+        var additionalProtectedPaths = YmmpxProjectJson.FindVideoItemFilePaths(root)
+            .Select(path => NormalizePath(projectDirectory, path))
+            .OfType<string>()
+            .SelectMany(path => FindPngSequenceFiles(path, visitedSequenceGroups))
+            .Select(candidate => candidate.ResolvedPath!);
+        var outputGuard = PackageOutputInputGuard.Create(
+            normalizedOutputPath, normalizedProjectPath, protectedPaths, additionalProtectedPaths);
 
-        var resourceCandidates = allCandidates
-            .Where(x =>
-                !string.IsNullOrWhiteSpace(x.ResolvedPath) &&
-                File.Exists(x.ResolvedPath!) &&
-                !excluded.Contains(x.ResolvedPath!) &&
-                !string.Equals(x.ResolvedPath!, normalizedProjectPath, GetPathComparison()))
-            .ToList();
-
-        var resourceEntries = resourceCandidates
+        var resourceEntries = references.Concat(sequenceFiles)
+            .Where(candidate => CanPackage(candidate.ResolvedPath))
             .GroupBy(x => x.ResolvedPath!, GetPathComparer())
             // ImageItem 等の通常参照と重なった場合も、VideoItem の連番配置を優先する。
             .Select(group => group.FirstOrDefault(x => x.SequenceGroupKey is not null) ?? group.First())
             .ToList();
 
         // 保存名 (ファイル名ベース + 連番) の対応表を先に作り、JSON 書き換えと links.json で共用する。
-        var usedNames = ReserveUnbundledResourceNames(projectDirectory, references, resourceEntries, document.RootElement);
+        var layerReferences = YmmpxProjectJson.FindPsdLayerFilePaths(root, includeUi);
+        var usedNames = ReserveUnbundledResourceNames(projectDirectory, references, resourceEntries, layerReferences);
         var packagedNameByResolvedPath = new Dictionary<string, string>(GetPathComparer());
         var publicFileMap = new Dictionary<string, string>(StringComparer.Ordinal);
         var linksManifestMap = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -298,6 +299,16 @@ public static class YmmpxPackageService
             if (Directory.Exists(tempDir))
                 Directory.Delete(tempDir, true);
         }
+
+        List<ResourceCandidate> ReadReferences(bool includeProjectUiSettings) =>
+            YmmpxProjectJson.FindProjectFilePaths(root, includeProjectUiSettings)
+                .Select(path => new ResourceCandidate(path, NormalizePath(projectDirectory, path), null))
+                .ToList();
+
+        bool CanPackage(string? path) =>
+            path is not null && !excluded.Contains(path) &&
+            !string.Equals(path, normalizedProjectPath, GetPathComparison()) &&
+            File.Exists(path);
     }
 
     /// <summary>
@@ -421,94 +432,156 @@ public static class YmmpxPackageService
         IReadOnlySet<string>? archiveFiles)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseDirectory);
-        var linkMap = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        // 現行形式: links.json
-        var linksJsonPath = Path.GetFullPath(Path.Combine(baseDirectory, "links.json"));
-        if (IsAllowedArchiveFile(linksJsonPath, archiveFiles))
+        using var formats = ReadLinkDefinitions(baseDirectory, archiveFiles).GetEnumerator();
+        while (formats.MoveNext())
         {
-            try
+            var preferred = formats.Current;
+            if (preferred.ValidEntries.Count == 0)
+                continue;
+
+            var linkMap = preferred.ValidEntries
+                .Where(entry => !preferred.ConflictingKeys.Contains(YmmpxProjectJson.NormalizePathKey(entry.Key)))
+                .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
+            var resolvedKeys = linkMap.Keys.Select(YmmpxProjectJson.NormalizePathKey).ToHashSet(GetPathComparer());
+            var unresolved = preferred.DeclaredKeys.Count - resolvedKeys.Count;
+            if (archiveFiles is not null)
             {
-                var jsonMap = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(linksJsonPath));
-                if (jsonMap is not null)
+                var older = new LinkDefinitions();
+                while (formats.MoveNext())
                 {
-                    foreach (var item in jsonMap)
+                    foreach (var (source, target) in formats.Current.ValidEntries)
+                        older.Add(source, target);
+                    older.ConflictingKeys.UnionWith(formats.Current.ConflictingKeys);
+                }
+
+                var skippedKeys = new HashSet<string>(GetPathComparer());
+                foreach (var (source, target) in older.ValidEntries)
+                {
+                    var key = YmmpxProjectJson.NormalizePathKey(source);
+                    if (preferred.DeclaredKeys.Contains(key))
+                        continue;
+
+                    // 補完できるのは、パッケージ内で既に同じ相対パスを指し、競合のない参照だけ。
+                    var relativeTarget = Path.GetRelativePath(baseDirectory, target).Replace('\\', '/');
+                    if (older.ConflictingKeys.Contains(key) ||
+                        !relativeTarget.StartsWith("resources/", GetPathComparison()) ||
+                        !string.Equals(key, relativeTarget, GetPathComparison()))
                     {
-                        if (string.IsNullOrWhiteSpace(item.Key) || string.IsNullOrWhiteSpace(item.Value))
-                            continue;
-                        if (!TryResolvePathWithinBaseDirectory(baseDirectory, item.Value, out var resolvedPath) ||
-                            !IsAllowedArchiveFile(resolvedPath, archiveFiles))
-                            continue;
-                        linkMap[item.Key] = resolvedPath;
+                        skippedKeys.Add(key);
+                        continue;
                     }
 
-                    if (linkMap.Count > 0)
-                        return linkMap;
+                    if (resolvedKeys.Add(key))
+                        linkMap.Add(source, target);
                 }
+
+                unresolved += skippedKeys.Count;
             }
-            catch (JsonException)
-            {
-                // links.json が壊れている場合は次の形式にフォールバックする。
-            }
+
+            if (unresolved > 0)
+                Trace.TraceWarning("YMMPX: {0} link keys were skipped because they conflict or cannot be safely supplemented.", unresolved);
+            return linkMap;
         }
 
-        // 旧互換形式: manifest.json
-        var manifestPath = Path.GetFullPath(Path.Combine(baseDirectory, "manifest.json"));
-        if (IsAllowedArchiveFile(manifestPath, archiveFiles))
-        {
-            try
-            {
-                using var manifestDoc = JsonDocument.Parse(File.ReadAllText(manifestPath));
-                if (manifestDoc.RootElement.ValueKind == JsonValueKind.Object &&
-                    manifestDoc.RootElement.TryGetProperty("Files", out var filesElement) &&
-                    filesElement.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var fileEntry in filesElement.EnumerateArray())
-                    {
-                        if (fileEntry.ValueKind != JsonValueKind.Object)
-                            continue;
+        return new Dictionary<string, string>(StringComparer.Ordinal);
+    }
 
-                        if (!fileEntry.TryGetProperty("OriginalPath", out var originalPathElement) ||
-                            originalPathElement.ValueKind != JsonValueKind.String)
-                            continue;
+    private static IEnumerable<LinkDefinitions> ReadLinkDefinitions(
+        string baseDirectory, IReadOnlySet<string>? archiveFiles)
+    {
+        yield return ReadJsonLinks("links.json", isLegacyManifest: false);
+        yield return ReadJsonLinks("manifest.json", isLegacyManifest: true);
 
-                        if (!fileEntry.TryGetProperty("BundlePath", out var bundlePathElement) ||
-                            bundlePathElement.ValueKind != JsonValueKind.String)
-                            continue;
-
-                        var originalPath = originalPathElement.GetString();
-                        var bundlePath = bundlePathElement.GetString();
-                        if (string.IsNullOrWhiteSpace(originalPath) || string.IsNullOrWhiteSpace(bundlePath))
-                            continue;
-
-                        if (!TryResolvePathWithinBaseDirectory(baseDirectory, bundlePath, out var resolvedPath) ||
-                            !IsAllowedArchiveFile(resolvedPath, archiveFiles))
-                            continue;
-                        linkMap[originalPath] = resolvedPath;
-                    }
-
-                    if (linkMap.Count > 0)
-                        return linkMap;
-                }
-            }
-            catch (JsonException)
-            {
-                // manifest.json が壊れている場合は links.txt にフォールバックする。
-            }
-        }
-
-        // 最終フォールバック: CSV 形式の links.txt
+        var legacyLinks = new LinkDefinitions();
         var linksPath = Path.GetFullPath(Path.Combine(baseDirectory, "links.txt"));
         if (IsAllowedArchiveFile(linksPath, archiveFiles))
         {
             foreach (var line in File.ReadAllLines(linksPath))
             {
                 if (TryParseLegacyLinksLine(baseDirectory, line, archiveFiles, out var source, out var resolvedPath))
-                    linkMap[source] = resolvedPath;
+                    legacyLinks.Add(source, resolvedPath);
             }
         }
+        yield return legacyLinks;
 
-        return linkMap;
+        LinkDefinitions ReadJsonLinks(string fileName, bool isLegacyManifest)
+        {
+            var definitions = new LinkDefinitions();
+            var filePath = Path.GetFullPath(Path.Combine(baseDirectory, fileName));
+            if (!IsAllowedArchiveFile(filePath, archiveFiles))
+                return definitions;
+
+            try
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(filePath));
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                    return definitions;
+
+                if (!isLegacyManifest)
+                {
+                    foreach (var entry in root.EnumerateObject())
+                        AddJsonLink(entry.Name, ReadLinkTarget(entry.Value));
+                }
+                else if (root.TryGetProperty("Files", out var files) && files.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var entry in files.EnumerateArray())
+                    {
+                        if (entry.ValueKind == JsonValueKind.Object &&
+                            entry.TryGetProperty("OriginalPath", out var source) && source.ValueKind == JsonValueKind.String)
+                        {
+                            entry.TryGetProperty("BundlePath", out var target);
+                            AddJsonLink(source.GetString(), ReadLinkTarget(target));
+                        }
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // 形式全体を読み取れない場合は、従来どおり次の形式へフォールバックする。
+            }
+
+            return definitions;
+
+            void AddJsonLink(string? source, string? target)
+            {
+                if (string.IsNullOrWhiteSpace(source))
+                    return;
+
+                var resolved = !string.IsNullOrWhiteSpace(target) &&
+                    TryResolvePathWithinBaseDirectory(baseDirectory, target, out var path) &&
+                    IsAllowedArchiveFile(path, archiveFiles) ? path : null;
+                definitions.Add(source, resolved);
+            }
+        }
+    }
+
+    private static string? ReadLinkTarget(JsonElement value) =>
+        value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    private sealed class LinkDefinitions
+    {
+        private readonly Dictionary<string, string> targetByKey = new(GetPathComparer());
+
+        public Dictionary<string, string> ValidEntries { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> DeclaredKeys { get; } = new(GetPathComparer());
+        public HashSet<string> ConflictingKeys { get; } = new(GetPathComparer());
+
+        public void Add(string source, string? target)
+        {
+            var key = YmmpxProjectJson.NormalizePathKey(source);
+            DeclaredKeys.Add(key);
+            if (target is null)
+                return;
+
+            if (!targetByKey.TryAdd(key, target) &&
+                !string.Equals(targetByKey[key], target, GetPathComparison()))
+            {
+                ConflictingKeys.Add(key);
+            }
+
+            ValidEntries[source] = target;
+        }
     }
 
     /// <summary>
@@ -1069,7 +1142,7 @@ public static class YmmpxPackageService
         string projectDirectory,
         IEnumerable<ResourceCandidate> references,
         IEnumerable<ResourceCandidate> resourceEntries,
-        JsonElement root)
+        IEnumerable<string> layerReferences)
     {
         var bundledSources = resourceEntries.Select(entry => entry.ResolvedPath!).ToHashSet(GetPathComparer());
         var reservedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1080,7 +1153,7 @@ public static class YmmpxPackageService
         }
 
         // 別 PSD のレイヤー設定など、主参照と一致しない場合は補助参照が元のまま残る。
-        foreach (var path in YmmpxProjectJson.FindPsdLayerFilePaths(root))
+        foreach (var path in layerReferences)
             Reserve(path, NormalizePath(projectDirectory, path));
 
         return reservedNames;
@@ -1127,11 +1200,10 @@ public static class YmmpxPackageService
         return candidate;
     }
 
-    private static IEnumerable<ResourceCandidate> FindPngSequenceFiles(string projectDirectory, string originalPath)
+    private static IEnumerable<ResourceCandidate> FindPngSequenceFiles(
+        string representativePath, ISet<string> visitedGroups)
     {
-        var representativePath = NormalizePath(projectDirectory, originalPath);
-        if (representativePath is null ||
-            !Path.GetExtension(representativePath).Equals(".png", StringComparison.OrdinalIgnoreCase))
+        if (!Path.GetExtension(representativePath).Equals(".png", StringComparison.OrdinalIgnoreCase))
         {
             return Array.Empty<ResourceCandidate>();
         }
@@ -1141,9 +1213,12 @@ public static class YmmpxPackageService
         if (string.IsNullOrEmpty(directory) || !TryGetSequenceFileNameParts(fileNameWithoutExtension, out var prefix))
             return Array.Empty<ResourceCandidate>();
 
+        var groupKey = $"{directory}\u001F{prefix}\u001F.png";
+        if (!visitedGroups.Add(groupKey))
+            return Array.Empty<ResourceCandidate>();
+
         try
         {
-            var groupKey = $"{directory}\u001F{prefix}\u001F.png";
             var candidates = Directory.EnumerateFiles(directory)
                 .Where(path => Path.GetExtension(path).Equals(".png", StringComparison.OrdinalIgnoreCase))
                 .Where(path =>

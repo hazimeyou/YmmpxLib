@@ -28,17 +28,27 @@ public static class YmmpxProjectJson
     /// JSON を再帰的に走査し、<c>FilePath</c> プロパティの値を列挙します。
     /// </summary>
     public static IEnumerable<string> FindFilePaths(JsonElement element) =>
-        FindPathValues(element, "FilePath");
+        FindProjectFilePaths(element, includeProjectUiSettings: true);
 
-    internal static IEnumerable<string> FindPsdLayerFilePaths(JsonElement element) =>
-        FindPathValues(element, "EnableLayersFilePath");
+    internal static IEnumerable<string> FindProjectFilePaths(JsonElement element, bool includeProjectUiSettings) =>
+        FindPathValues(element, "FilePath", includeProjectUiSettings);
 
-    private static IEnumerable<string> FindPathValues(JsonElement element, string propertyName)
+    internal static IEnumerable<string> FindPsdLayerFilePaths(JsonElement element, bool includeProjectUiSettings = true) =>
+        FindPathValues(element, "EnableLayersFilePath", includeProjectUiSettings);
+
+    private static bool IsProjectUiSetting(string name) => name is "LayoutXml" or "ToolStates";
+
+    private static IEnumerable<string> FindPathValues(
+        JsonElement element, string propertyName, bool includeProjectUiSettings = true)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
             foreach (var property in element.EnumerateObject())
             {
+                // UI設定を除去するのはプロジェクト直下のみ。子の同名フィールドは保持する。
+                if (!includeProjectUiSettings && IsProjectUiSetting(property.Name))
+                    continue;
+
                 if (property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase) &&
                     property.Value.ValueKind == JsonValueKind.String)
                 {
@@ -74,7 +84,7 @@ public static class YmmpxProjectJson
     /// VideoItem の子オブジェクトにある FilePath は対象にしません。連番画像の判定は、
     /// 動画アイテムの代表ファイルだけに限定する必要があるためです。
     /// </remarks>
-    internal static IEnumerable<string> FindVideoItemFilePaths(JsonElement element)
+    internal static IEnumerable<string> FindVideoItemFilePaths(JsonElement element, bool includeProjectUiSettings = true)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
@@ -89,6 +99,9 @@ public static class YmmpxProjectJson
 
             foreach (var property in element.EnumerateObject())
             {
+                if (!includeProjectUiSettings && IsProjectUiSetting(property.Name))
+                    continue;
+
                 foreach (var childPath in FindVideoItemFilePaths(property.Value))
                     yield return childPath;
             }
