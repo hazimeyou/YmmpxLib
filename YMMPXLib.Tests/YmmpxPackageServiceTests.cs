@@ -879,6 +879,137 @@ public sealed class YmmpxPackageServiceTests
         Assert.Equal("a.txt", restored["Missing"]!["FilePath"]!.GetValue<string>());
     }
 
+    [Theory]
+    [InlineData("resources/shared.txt", true)]
+    [InlineData("resources/shared.txt", false)]
+    [InlineData("RESOURCES/SHARED.TXT", false)]
+    [InlineData("resources\\shared.txt", false)]
+    [InlineData("./resources/shared.txt", false)]
+    public async Task PackageAndExtract_LeavesUnbundledReferencesDistinctFromBundledResources(
+        string unbundledPath,
+        bool excludeExistingFile)
+    {
+        if (unbundledPath == "RESOURCES/SHARED.TXT" && !OperatingSystem.IsWindows())
+            return;
+
+        using var workspace = new TemporaryDirectory();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "first"));
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "second"));
+        var first = Path.Combine(workspace.Path, "first", "shared.txt");
+        var second = Path.Combine(workspace.Path, "second", "shared.txt");
+        File.WriteAllText(first, "first source");
+        File.WriteAllText(second, "different source with the same name");
+        var excluded = new HashSet<string>();
+        var unbundledSource = Path.Combine(workspace.Path, "resources", "shared.txt");
+        if (excludeExistingFile)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(unbundledSource)!);
+            File.WriteAllText(unbundledSource, "excluded source");
+            excluded.Add(unbundledSource);
+        }
+
+        var project = Path.Combine(workspace.Path, "original.ymmp");
+        var package = Path.Combine(workspace.Path, "package.ymmpx");
+        File.WriteAllText(project, JsonSerializer.Serialize(new
+        {
+            Items = new[]
+            {
+                new { FilePath = "first/shared.txt" },
+                new { FilePath = first },
+                new { FilePath = "second/shared.txt" },
+                new { FilePath = unbundledPath }
+            }
+        }));
+        var originalProject = File.ReadAllBytes(project);
+
+        var packed = await YmmpxPackageService.CreatePackageAsync(
+            project, package, excluded, cancellationToken: TestContext.Current.CancellationToken);
+        var extractPath = Path.Combine(workspace.Path, "unpacked");
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(package, extractPath);
+        var items = JsonNode.Parse(File.ReadAllText(unpacked.ProjectFilePath))!["Items"]!.AsArray();
+        string GetReference(int index) => items[index]!["FilePath"]!.GetValue<string>();
+
+        Assert.Equal(2, packed.ResourceCount);
+        Assert.Equal(3, unpacked.ReplacedPathCount);
+        Assert.Equal(GetReference(0), GetReference(1));
+        Assert.NotEqual(GetReference(0), GetReference(2));
+        Assert.Equal("first source", File.ReadAllText(GetReference(0)));
+        Assert.Equal("different source with the same name", File.ReadAllText(GetReference(2)));
+        Assert.Equal(unbundledPath, GetReference(3));
+        Assert.False(File.Exists(Path.Combine(extractPath, "resources", "shared.txt")));
+        Assert.Equal(originalProject, File.ReadAllBytes(project));
+        if (excludeExistingFile)
+            Assert.Equal("excluded source", File.ReadAllText(unbundledSource));
+    }
+
+    [Theory]
+    [InlineData("resources/sequence_1/frame01.png")]
+    [InlineData("./resources/sequence_1/frame02.png")]
+    public async Task PackageAndExtract_ReservesUnbundledReferencesBeforeAssigningSequenceDirectory(
+        string unbundledPath)
+    {
+        using var workspace = new TemporaryDirectory();
+        var frames = Path.Combine(workspace.Path, "frames");
+        Directory.CreateDirectory(frames);
+        File.WriteAllText(Path.Combine(frames, "frame01.png"), "frame one");
+        File.WriteAllText(Path.Combine(frames, "frame02.png"), "frame two");
+        var project = Path.Combine(workspace.Path, "original.ymmp");
+        File.WriteAllText(project, JsonSerializer.Serialize(new
+        {
+            Items = new object[]
+            {
+                new Dictionary<string, string>
+                {
+                    ["$type"] = "YukkuriMovieMaker.Project.Items.VideoItem, YukkuriMovieMaker",
+                    ["FilePath"] = "frames/frame01.png"
+                },
+                new { FilePath = unbundledPath }
+            }
+        }));
+        var originalProject = File.ReadAllBytes(project);
+
+        var package = Path.Combine(workspace.Path, "package.ymmpx");
+        var packed = await YmmpxPackageService.CreatePackageAsync(
+            project, package, cancellationToken: TestContext.Current.CancellationToken);
+        var extractPath = Path.Combine(workspace.Path, "unpacked");
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(package, extractPath);
+        var items = JsonNode.Parse(File.ReadAllText(unpacked.ProjectFilePath))!["Items"]!.AsArray();
+        var restoredFrame = items[0]!["FilePath"]!.GetValue<string>();
+
+        Assert.Equal(2, packed.ResourceCount);
+        Assert.Equal(1, unpacked.ReplacedPathCount);
+        Assert.Equal(unbundledPath, items[1]!["FilePath"]!.GetValue<string>());
+        Assert.Equal("frame one", File.ReadAllText(restoredFrame));
+        Assert.Equal("frame two", File.ReadAllText(Path.Combine(Path.GetDirectoryName(restoredFrame)!, "frame02.png")));
+        Assert.False(Directory.Exists(Path.Combine(extractPath, "resources", "sequence_1")));
+        Assert.Equal(originalProject, File.ReadAllBytes(project));
+    }
+
+    [Fact]
+    public async Task PackageAndExtract_DoesNotRelinkUnbundledPsdLayerReferenceToDifferentSource()
+    {
+        using var workspace = new TemporaryDirectory();
+        var psd = Path.Combine(workspace.Path, "character.psd");
+        File.WriteAllText(psd, "included PSD");
+        var project = Path.Combine(workspace.Path, "original.ymmp");
+        const string missingLayerPath = "resources/character.psd";
+        File.WriteAllText(project, JsonSerializer.Serialize(new
+        {
+            FilePath = psd,
+            EnableLayers = new[] { "body" },
+            EnableLayersFilePath = missingLayerPath
+        }));
+        var package = Path.Combine(workspace.Path, "package.ymmpx");
+
+        await YmmpxPackageService.CreatePackageAsync(
+            project, package, cancellationToken: TestContext.Current.CancellationToken);
+        var unpacked = YmmpxPackageService.ExtractAndRestoreProject(package, Path.Combine(workspace.Path, "unpacked"));
+        var restored = JsonNode.Parse(File.ReadAllText(unpacked.ProjectFilePath))!;
+
+        Assert.Equal(missingLayerPath, restored["EnableLayersFilePath"]!.GetValue<string>());
+        Assert.Equal("included PSD", File.ReadAllText(restored["FilePath"]!.GetValue<string>()));
+    }
+
     [Fact]
     public void ExtractAndRestoreProject_DoesNotFollowMarkerOutsideExtractionDirectory()
     {

@@ -27,14 +27,19 @@ public static class YmmpxProjectJson
     /// <summary>
     /// JSON を再帰的に走査し、<c>FilePath</c> プロパティの値を列挙します。
     /// </summary>
-    public static IEnumerable<string> FindFilePaths(JsonElement element)
+    public static IEnumerable<string> FindFilePaths(JsonElement element) =>
+        FindPathValues(element, "FilePath");
+
+    internal static IEnumerable<string> FindPsdLayerFilePaths(JsonElement element) =>
+        FindPathValues(element, "EnableLayersFilePath");
+
+    private static IEnumerable<string> FindPathValues(JsonElement element, string propertyName)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
             foreach (var property in element.EnumerateObject())
             {
-                // FilePath プロパティの文字列値を返す。
-                if (property.Name.Equals("FilePath", StringComparison.OrdinalIgnoreCase) &&
+                if (property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase) &&
                     property.Value.ValueKind == JsonValueKind.String)
                 {
                     var path = property.Value.GetString();
@@ -44,7 +49,7 @@ public static class YmmpxProjectJson
                 else
                 {
                     // 子要素を継続して走査する。
-                    foreach (var childPath in FindFilePaths(property.Value))
+                    foreach (var childPath in FindPathValues(property.Value, propertyName))
                         yield return childPath;
                 }
             }
@@ -57,7 +62,7 @@ public static class YmmpxProjectJson
 
         foreach (var item in element.EnumerateArray())
         {
-            foreach (var childPath in FindFilePaths(item))
+            foreach (var childPath in FindPathValues(item, propertyName))
                 yield return childPath;
         }
     }
@@ -295,7 +300,7 @@ public static class YmmpxProjectJson
         }
     }
 
-    private static string NormalizePathKey(string path)
+    internal static string NormalizePathKey(string path)
     {
         // 相対パスは壊さず、区切り差だけを吸収する。
         return path.Replace('\\', '/').Trim();

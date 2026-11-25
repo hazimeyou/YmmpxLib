@@ -65,13 +65,14 @@ public static class YmmpxPackageService
 
         // 元 JSON を解析し、参照ファイル (FilePath) の一覧を作る。
         using var document = JsonDocument.Parse(projectText);
-        var resourceCandidates = YmmpxProjectJson
+        var references = YmmpxProjectJson
             .FindFilePaths(document.RootElement)
             .Select(originalPath => new ResourceCandidate(
                 originalPath,
                 NormalizePath(projectDirectory, originalPath),
                 null))
-            .Concat(YmmpxProjectJson
+            .ToList();
+        var resourceCandidates = references.Concat(YmmpxProjectJson
                 .FindVideoItemFilePaths(document.RootElement)
                 .SelectMany(originalPath => FindPngSequenceFiles(projectDirectory, originalPath)))
             .Where(x =>
@@ -91,7 +92,7 @@ public static class YmmpxPackageService
             throw new ArgumentException("Output path must be different from every packaged resource path.", nameof(outputPath));
 
         // 保存名 (ファイル名ベース + 連番) の対応表を先に作り、JSON 書き換えと links.json で共用する。
-        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var usedNames = ReserveUnbundledResourceNames(projectDirectory, references, resourceEntries, document.RootElement);
         var packagedNameByResolvedPath = new Dictionary<string, string>(GetPathComparer());
         var publicFileMap = new Dictionary<string, string>(StringComparer.Ordinal);
         var linksManifestMap = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -1055,6 +1056,52 @@ public static class YmmpxPackageService
     private static readonly Regex SequenceFileNamePattern = new(
         "^(?<prefix>.*?)(?<number>\\d+)$",
         RegexOptions.CultureInvariant);
+
+    private static HashSet<string> ReserveUnbundledResourceNames(
+        string projectDirectory,
+        IEnumerable<ResourceCandidate> references,
+        IEnumerable<ResourceCandidate> resourceEntries,
+        JsonElement root)
+    {
+        var bundledSources = resourceEntries.Select(entry => entry.ResolvedPath!).ToHashSet(GetPathComparer());
+        var reservedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var reference in references)
+        {
+            if (reference.ResolvedPath is null || !bundledSources.Contains(reference.ResolvedPath))
+                Reserve(reference.OriginalPath, reference.ResolvedPath);
+        }
+
+        // 別 PSD のレイヤー設定など、主参照と一致しない場合は補助参照が元のまま残る。
+        foreach (var path in YmmpxProjectJson.FindPsdLayerFilePaths(root))
+            Reserve(path, NormalizePath(projectDirectory, path));
+
+        return reservedNames;
+
+        void Reserve(string originalPath, string? resolvedPath)
+        {
+            ReserveTopLevelName(YmmpxProjectJson.NormalizePathKey(originalPath));
+            if (resolvedPath is not null)
+            {
+                // ./resources 等は復元時に値が変わらなくても、展開後は同梱素材を指し得る。
+                var relativePath = Path.GetRelativePath(projectDirectory, resolvedPath);
+                ReserveTopLevelName(YmmpxProjectJson.NormalizePathKey(relativePath));
+            }
+        }
+
+        void ReserveTopLevelName(string path)
+        {
+            const string resourcesPrefix = "resources/";
+            if (!path.StartsWith(resourcesPrefix, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var name = path[resourcesPrefix.Length..];
+            var separator = name.IndexOf('/');
+            if (separator >= 0)
+                name = name[..separator];
+            if (name.Length > 0)
+                reservedNames.Add(name);
+        }
+    }
 
     private static string GetUniqueFileName(string fileName, ISet<string> usedNames)
     {
