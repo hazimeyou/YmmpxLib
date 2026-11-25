@@ -86,6 +86,11 @@ internal sealed class PackageOutputInputGuard
         {
         }
 
+        return IdentifyWithoutNativeIdentity(path);
+    }
+
+    private static FileIdentity? IdentifyWithoutNativeIdentity(string path)
+    {
         try
         {
             _ = File.GetAttributes(path);
@@ -148,7 +153,11 @@ internal sealed class PackageOutputInputGuard
         const int currentWorkingDirectory = -100;
         const uint inodeMask = 0x100;
         if (StatLinux(currentWorkingDirectory, path, 0, inodeMask, out var file) != 0)
-            return ResolveUnixError(path);
+        {
+            const int notImplemented = 38;
+            var error = Marshal.GetLastPInvokeError();
+            return error == notImplemented ? IdentifyWithoutNativeIdentity(path) : ResolveUnixError(path, error);
+        }
 
         if ((file.Mask & inodeMask) == 0)
             throw new IOException($"The file system did not report an inode for '{path}'.");
@@ -164,16 +173,15 @@ internal sealed class PackageOutputInputGuard
         var requested = new MacOSAttributeList { BitmapCount = 5, CommonAttributes = deviceId | fileId };
         var size = (uint)Marshal.SizeOf<MacOSFileAttributes>();
         if (GetMacOSAttributes(path, in requested, out var file, size, 0) != 0)
-            return ResolveUnixError(path);
+            return ResolveUnixError(path, Marshal.GetLastPInvokeError());
         if (file.Length != size)
             throw new IOException($"The file system did not report complete file identity for '{path}'.");
 
         return VerifyIdentity(path, new FileIdentity(file.Device, file.Inode, 0));
     }
 
-    private static FileIdentity? ResolveUnixError(string path)
+    private static FileIdentity? ResolveUnixError(string path, int error)
     {
-        var error = Marshal.GetLastPInvokeError();
         const int noEntry = 2;
         const int notDirectory = 20;
         return error is noEntry or notDirectory ? null : throw IdentityError(path, error);
