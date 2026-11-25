@@ -72,9 +72,17 @@ public static class YmmpxPackageService
                 NormalizePath(projectDirectory, originalPath),
                 null))
             .ToList();
-        var resourceCandidates = references.Concat(YmmpxProjectJson
+        var allCandidates = references.Concat(YmmpxProjectJson
                 .FindVideoItemFilePaths(document.RootElement)
                 .SelectMany(originalPath => FindPngSequenceFiles(projectDirectory, originalPath)))
+            .ToList();
+        var protectedPaths = allCandidates.Select(candidate => candidate.ResolvedPath)
+            .Concat(YmmpxProjectJson.FindPsdLayerFilePaths(document.RootElement)
+                .Select(path => NormalizePath(projectDirectory, path)))
+            .OfType<string>();
+        var outputGuard = PackageOutputInputGuard.Create(normalizedOutputPath, normalizedProjectPath, protectedPaths);
+
+        var resourceCandidates = allCandidates
             .Where(x =>
                 !string.IsNullOrWhiteSpace(x.ResolvedPath) &&
                 File.Exists(x.ResolvedPath!) &&
@@ -87,9 +95,6 @@ public static class YmmpxPackageService
             // ImageItem 等の通常参照と重なった場合も、VideoItem の連番配置を優先する。
             .Select(group => group.FirstOrDefault(x => x.SequenceGroupKey is not null) ?? group.First())
             .ToList();
-
-        if (resourceEntries.Any(x => string.Equals(x.ResolvedPath!, normalizedOutputPath, GetPathComparison())))
-            throw new ArgumentException("Output path must be different from every packaged resource path.", nameof(outputPath));
 
         // 保存名 (ファイル名ベース + 連番) の対応表を先に作り、JSON 書き換えと links.json で共用する。
         var usedNames = ReserveUnbundledResourceNames(projectDirectory, references, resourceEntries, document.RootElement);
@@ -151,7 +156,6 @@ public static class YmmpxPackageService
         var totalCount = filesToPackage.Count;
         // links ファイルを一時生成するための作業ディレクトリ。
         var tempDir = Path.Combine(Path.GetTempPath(), "YmmpxLib", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
         var outputDirectory = Path.GetDirectoryName(normalizedOutputPath)
             ?? throw new DirectoryNotFoundException($"Output directory was not found: {outputPath}");
         var temporaryOutputPath = Path.Combine(
@@ -160,6 +164,7 @@ public static class YmmpxPackageService
 
         try
         {
+            Directory.CreateDirectory(tempDir);
             var linksJsonFile = Path.Combine(tempDir, "links.json");
 
             // links.json は扱いやすい JSON 形式のマニフェストとして同梱する。
@@ -274,7 +279,10 @@ public static class YmmpxPackageService
             }
 
             await RepackWithoutCompressionIfNeededAsync(temporaryOutputPath, cancellationToken).ConfigureAwait(false);
-            File.Move(temporaryOutputPath, normalizedOutputPath, overwrite: true);
+            cancellationToken.ThrowIfCancellationRequested();
+            var overwrite = outputGuard.Validate();
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporaryOutputPath, normalizedOutputPath, overwrite);
             completedCount = totalCount;
             processedBytes = totalBytes > 0 ? totalBytes : 0;
             ReportProgress("Completed", force: true, isCompleted: true);
