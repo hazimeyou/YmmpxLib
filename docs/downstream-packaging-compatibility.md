@@ -1,0 +1,33 @@
+# 下流製品の YMMPX 互換性
+
+2026年11月25日に下記のローカルソースと対応する公開 Git 参照を確認した。依存先の確認は読み取り専用で、修正版 DLL を使った下流製品の実行と実 YMM4 の受入は未実施。
+
+| 対象 | R1調査時の参照 | 今回の参照と作業状態 |
+| --- | --- | --- |
+| YMMProjectManager 公開系列 | `bdf6dbd32c910bd2a9ea6432399ba40f8f1d72af` | [master・v0.4.0](https://github.com/hazimeyou/YMMProjectManager/tree/bdf6dbd32c910bd2a9ea6432399ba40f8f1d72af)。HEAD に差分なし。作業ツリーはクリーン |
+| YMMProjectManager v0.5 開発系列 | 公開系列とは別の確認対象 | [R33](https://github.com/hazimeyou/YMMProjectManager/tree/45fbcba2e8e88413ac7b30f97855439c63aa4bb0) の `codex/ymmpm-v050-r33-nonvm-development` を確認。公開ブランチとローカル HEAD が一致し、作業ツリーはクリーン |
+| YMMResourcePackager | `2a767c8b4922cb0aa1f0cf6fdaf8a3ea6a0bc53a` | [master](https://github.com/hazimeyou/YMMResourcePackager/tree/2a767c8b4922cb0aa1f0cf6fdaf8a3ea6a0bc53a)。HEAD に差分なし。事前からの `YMMResourcePackagerPluginToolPlugin.cs` の変更あり |
+
+## YMMProjectManager 公開系列
+
+- `YmmpxLibBridge` は `YmmpxPackageService`、`YmmpxPackagingOptions`、`YmmpxPackagingProgress` を型名で読み込む。`CreatePackageAsync` は同名かつ引数5個以上の最初の公開 static メソッドを選び、6個以上ならトークンを含む6引数を渡す。既定の梱包では空の除外集合と `IncludeProjectUiSettings = true` を渡し、結果の `OutputPath`、`ResourceCount`、`FileMap` を読む。同名の公開オーバーロードを追加すると、既存シグネチャを残しても呼び出しが変わる可能性がある。[梱包ブリッジ](https://github.com/hazimeyou/YMMProjectManager/blob/bdf6dbd32c910bd2a9ea6432399ba40f8f1d72af/YMMProjectManager/Infrastructure/Packaging/YmmpxLibBridge.cs#L53-L126)
+- 独自の探索は JSON のオブジェクトと配列にある完全一致の `FilePath` を列挙する。検出数は参照出現数、不足数は解決に失敗した参照の数、重複数は実在する正規化済みパスの再出現数。同梱数は Core の `ResourceCount` を使う。リンク一覧は独自の仮格納名で `FileMap` を引き、見つからない場合は仮格納名を表示する。予約回避による改名、同名素材、連番、大小文字の差で、表示と実際の格納パスが一致する保証はない。[探索](https://github.com/hazimeyou/YMMProjectManager/blob/bdf6dbd32c910bd2a9ea6432399ba40f8f1d72af/YMMProjectManager/Infrastructure/Packaging/PackagingDetector.cs#L26-L120) [独自の件数・仮格納名](https://github.com/hazimeyou/YMMProjectManager/blob/bdf6dbd32c910bd2a9ea6432399ba40f8f1d72af/YMMProjectManager/Infrastructure/Packaging/YmmpxLibBridge.cs#L350-L421)
+- 展開経路は `GetAvailableDirectoryPath` と `ExtractAndRestoreProject` をそれぞれ名前で検索し、`ProjectFilePath`、`ReplacedPathCount`、`LinkMap` を読む。リンク一覧は `LinkMap` の各項目を復元済みとして表示し、展開素材数にキー数を使う。混在する定義から別名が補われると、キーの件数と物理ファイル数、実際の参照置換数がそれぞれ異なりうる。プロジェクト一覧の手動再リンクは別の JSON 探索・書込み経路なので、Core の修正で手動再リンク対象は増えない。[展開ブリッジ](https://github.com/hazimeyou/YMMProjectManager/blob/bdf6dbd32c910bd2a9ea6432399ba40f8f1d72af/YMMProjectManager/Infrastructure/Packaging/YmmpxLibBridge.cs#L147-L209) [手動再リンク](https://github.com/hazimeyou/YMMProjectManager/blob/bdf6dbd32c910bd2a9ea6432399ba40f8f1d72af/YMMProjectManager/Infrastructure/Relink/YmmpMediaRelinker.cs#L495-L526)
+
+## YMMProjectManager v0.5 開発系列
+
+- R33の梱包バインダーは主要型、公開プロパティの型、`Task<YmmpxPackagingResult>`、`CreatePackageAsync` の6引数すべてを照合する。さらにリゾルバーは公式 v1.1.0 の AssemblyVersion `1.1.0.0` と Core の SHA-256 を固定し、通常の導入経路ではプラグイン DLL の SHA-256 も確認する。`YMMPX_LIB_PATH` で Core DLL を明示してもそのハッシュ検証は残る。修正版は同じ公開 API を保持していても、公式成果物の識別情報を承認のうえ更新するまで R33 の梱包経路で利用できない。[バインダー](https://github.com/hazimeyou/YMMProjectManager/blob/45fbcba2e8e88413ac7b30f97855439c63aa4bb0/YMMProjectManager/Ymmpx/YmmpxLibApi.cs#L21-L45) [リゾルバー](https://github.com/hazimeyou/YMMProjectManager/blob/45fbcba2e8e88413ac7b30f97855439c63aa4bb0/YMMProjectManager/Ymmpx/YmmpxLibResolver.cs#L24-L32) [検証分岐](https://github.com/hazimeyou/YMMProjectManager/blob/45fbcba2e8e88413ac7b30f97855439c63aa4bb0/YMMProjectManager/Ymmpx/YmmpxLibResolver.cs#L71-L109)
+- R33の標準梱包は PM が素材候補を先に提示し、合意した入力を別領域へコピーして Core を呼び、公開前に ZIP 内の素材の長さと SHA-256 の多重集合を照合する。R33は代表 PNG が欠損・除外された場合も兄弟素材を採取する v1.1.0 の挙動を回帰条件としている。修正版に切り替えた後、Core がその兄弟素材を省くと、古い計画では含まれるはずの素材が不足し公開が拒否されうる。UI 設定の除外は素材プレビューの後で選ぶため、UI 専用素材を計画から外す場合も選択と照合条件の同期が必要になる。[事前候補](https://github.com/hazimeyou/YMMProjectManager/blob/45fbcba2e8e88413ac7b30f97855439c63aa4bb0/YMMProjectManager/Ymmpx/YmmpxStandardPackage.cs#L22-L87) [UIの選択順](https://github.com/hazimeyou/YMMProjectManager/blob/45fbcba2e8e88413ac7b30f97855439c63aa4bb0/YMMProjectManager/Ymmpx/UI/ProjectListYmmpxTransfer.cs#L48-L85) [ZIP の素材照合](https://github.com/hazimeyou/YMMProjectManager/blob/45fbcba2e8e88413ac7b30f97855439c63aa4bb0/YMMProjectManager/Ymmpx/YmmpxStandardPackage.cs#L300-L314) [R33 の連番回帰記録](https://github.com/hazimeyou/YMMProjectManager/blob/45fbcba2e8e88413ac7b30f97855439c63aa4bb0/docs/development/v0.5.0-r33-ymmpx.md#L13-L17)
+- R33の展開は PM 独自の `YmmpxPackageReader` に委譲する。標準形式の読み取りではマーカーと `links.json` を要求し、各素材にリンク1件を求め、標準以外の追加 ZIP 項目を拒否する。Core で混在リンク定義の補完を行っても、R33の展開条件は変わらない。R33資料の v0.5.0 判定は `NOT_READY`、正式リリースは `RELEASE_NOT_READY`。[展開ブリッジ](https://github.com/hazimeyou/YMMProjectManager/blob/45fbcba2e8e88413ac7b30f97855439c63aa4bb0/YMMProjectManager/Ymmpx/YmmpxLibBridge.cs#L232-L247) [標準形式の検査](https://github.com/hazimeyou/YMMProjectManager/blob/45fbcba2e8e88413ac7b30f97855439c63aa4bb0/YMMProjectManager/Ymmpx/YmmpxPackageReader.cs#L509-L550) [R33 の受入状況](https://github.com/hazimeyou/YMMProjectManager/blob/45fbcba2e8e88413ac7b30f97855439c63aa4bb0/docs/development/v0.5.0-r33-nonvm-development.md#L41-L43)
+
+## YMMResourcePackager
+
+- `PackagingDetector` はオブジェクトと配列から完全一致の `FilePath` を拾い、元の文字列表現を大文字小文字無視で重複排除する。除外画面とグローバル・プロジェクト別ルールの対象はこの候補で決まる。事前検証は除外と不足の件数を表示し、不足時には続行の選択を求める。UI 設定の除外は事前検証の後で Core に渡すため、UI 専用の候補、欠損の警告、連番兄弟の候補と実際の同梱素材が食い違いうる。[候補探索](https://github.com/hazimeyou/YMMResourcePackager/blob/2a767c8b4922cb0aa1f0cf6fdaf8a3ea6a0bc53a/YMMResourcePackager.Shared/PackagingDetector.cs#L29-L69) [除外解決](https://github.com/hazimeyou/YMMResourcePackager/blob/2a767c8b4922cb0aa1f0cf6fdaf8a3ea6a0bc53a/YMMResourcePackager.Shared/PackagingExcluder.cs#L23-L39) [梱包画面](https://github.com/hazimeyou/YMMResourcePackager/blob/2a767c8b4922cb0aa1f0cf6fdaf8a3ea6a0bc53a/YMMResourcePackager/ToolViewModel.cs#L752-L826)
+- `Features.EntryPoint` は梱包をメソッド名と引数数で解決し、`IncludeProjectUiSettings` と進捗を設定する。展開はプラグインと外部展開アプリが同じ `RunUnpack` を使い、Core の `ProjectFilePath` と `ReplacedPathCount` を受け取る。現行の型名、引数順、戻り値プロパティを保持すればソース上の呼び出し契約は維持できる。実ロード先と外部アプリ経由の往復は修正版で別途確認する。[Features の反射境界](https://github.com/hazimeyou/YMMResourcePackager/blob/2a767c8b4922cb0aa1f0cf6fdaf8a3ea6a0bc53a/YMMResourcePackager.Features/EntryPoint.cs#L5-L101) [外部アプリの反射境界](https://github.com/hazimeyou/YMMResourcePackager/blob/2a767c8b4922cb0aa1f0cf6fdaf8a3ea6a0bc53a/YMMResourceUnpackerApp/Program.cs#L210-L229)
+
+## 次回の受入条件
+
+1. 既存の静的公開シグネチャ、戻り値と進捗の型およびメンバーを、固定した Core ビルドに対し両製品の呼び出し方式で検証する。PM R33の公式成果物照合は維持し、修正版を採用する場合は対応版と DLL のハッシュを更新する。
+2. 同名素材、正規化前後が異なるパス、大小文字、複数参照、UI 専用素材、連番の欠損・除外を、候補表示、適用した除外、実際の ZIP 内容、復元した JSON で照合する。件数が参照箇所、同梱実体、欠損、リンク定義のどれを指すかを表示とログで明確にする。
+3. 既存版と修正版で作った通常 YMMPX を、PM 公開系列、PM 開発系列の独自リーダー、Packager の外部展開アプリの各経路で確認する。混在リンク定義は経路別に受理、保留、拒否を確認する。既存出力、原本、除外素材の同一性と取消時の保全を照合する。
+4. SDK 連携を将来有効化する前に、SDK から見える素材が両製品のプレビューと除外指定にも現れ、展開後のパスが保存されたプロジェクトで解決することを確認する。
